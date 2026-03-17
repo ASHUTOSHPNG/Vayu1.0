@@ -1,8 +1,8 @@
-# 🌬️ AirSense
+# 🌬️ VAYU
 
-AirSense is a modern, high-performance Air Quality Index (AQI) monitoring platform designed to provide real-time, actionable insights to both citizens and city administrators. 
+VAYU is a modern, high-performance Air Quality Index (AQI) monitoring platform designed to provide real-time, actionable insights to both citizens and city administrators. 
 
-Built with **Next.js 15**, **Supabase**, and **Tailwind CSS**, AirSense delivers a premium, data-driven experience with beautiful visualizations and a responsive interface.
+Built with **Next.js 15**, **Supabase**, and **Tailwind CSS**, VAYU delivers a premium, data-driven experience with beautiful visualizations and a responsive interface.
 
 ## 🚀 Key Features
 
