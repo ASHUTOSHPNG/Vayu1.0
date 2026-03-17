@@ -294,7 +294,7 @@ export default function LandingPage() {
                             {
                                 icon: Gauge,
                                 title: "Hard to Understand",
-                                description: "Most people only see a number like AQI 180, but they don&apos;t know what it means for their family today. Is it safe to go outside? Should children avoid sports?",
+                                description: "Most people only see a number like AQI 180, but they don't know what it means for their family today. Is it safe to go outside? Should children avoid sports?",
                                 color: "red"
                             },
                             {
