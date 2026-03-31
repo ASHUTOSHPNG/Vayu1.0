@@ -30,6 +30,7 @@ export function useAdminContext() {
             setIsLoading(true);
 
             const { data: { session } } = await supabase.auth.getSession();
+            console.log('session:', session);
 
             if (!session) {
                 setIsLoading(false);
@@ -44,6 +45,7 @@ export function useAdminContext() {
                 .select('*')
                 .eq('id', session.user.id)
                 .single();
+            console.log('profileData:', profileData, 'error:', error);
 
             if (profileData && !error) {
                 const profile = profileData as unknown as UserProfile;

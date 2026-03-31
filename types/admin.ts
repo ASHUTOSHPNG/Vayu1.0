@@ -5,7 +5,7 @@ export type AdminContext =
     | { type: 'city_admin'; cityFilter: { id: string; name: string } };
 
 export function getAdminContext(profile: UserProfile): AdminContext | null {
-    if (profile.admin_type === 'central_admin') {
+    if (profile.admin_type === 'central_admin' || profile.admin_type === 'super_admin')  {
         return { type: 'central_admin', cityFilter: null };
     }
     if (profile.admin_type === 'city_admin' && (profile.assigned_city_id || profile.assigned_city_name)) {
