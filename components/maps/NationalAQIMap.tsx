@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useQuery } from '@tanstack/react-query';
@@ -53,20 +53,29 @@ export function NationalAQIMap() {
         queryKey: ['national-aqi-data'],
         queryFn: async () => {
             const { data: locations, error } = await supabase
-                .from('locations')
+                .from('wards')
                 .select(`
                     id, name, city, state, latitude, longitude,
                     aqi_readings (
                         aqi_value, pm25, pm10, recorded_at
                     )
-                `)
-                .order('recorded_at', { foreignTable: 'aqi_readings', ascending: false })
-                .limit(1, { foreignTable: 'aqi_readings' });
+                `);
 
             if (error) throw error;
 
+            // wards schema doesn't have city/state/latitude/longitude — cast to any
+            const locList = (locations ?? []) as any[] as Array<{
+    id: string;
+    name: string;
+    city: string;
+    state: string | null;
+    latitude: number;
+    longitude: number;
+    aqi_readings: Array<{ aqi_value: number; pm25: number | null; pm10: number | null; recorded_at: string }>;
+}>;
+
             const cityMap: Record<string, any> = {};
-            locations.forEach(loc => {
+            locList.forEach(loc => {
                 const city = loc.city;
                 if (!cityMap[city]) {
                     cityMap[city] = {
@@ -79,8 +88,13 @@ export function NationalAQIMap() {
                         pollutants: { pm25: 0, pm10: 0 }
                     };
                 }
-                const readings = (loc as any).aqi_readings || [];
-                readings.forEach((r: any) => {
+                const readings = (loc.aqi_readings || [])
+                    .sort((a, b) =>
+                        new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
+                    )
+                    .slice(0, 1);
+
+                readings.forEach((r) => {
                     cityMap[city].aqi += r.aqi_value;
                     cityMap[city].readingsCount += 1;
                     if (r.pm25) cityMap[city].pollutants.pm25 += r.pm25;
@@ -98,7 +112,6 @@ export function NationalAQIMap() {
 
     return (
         <Card className="bg-[#132238] border-[#1e2a3b] h-[590px] flex flex-col overflow-hidden relative group shadow-2xl">
-            {/* Header with tabs */}
             <CardHeader
                 className="p-4 pb-2 flex flex-row items-center justify-between border-b border-[#1e2a3b] bg-[#0A1628]/80 backdrop-blur-sm absolute top-0 w-full left-0"
                 style={{ zIndex: 1000 }}
@@ -143,7 +156,6 @@ export function NationalAQIMap() {
                 </div>
             </CardHeader>
 
-            {/* Map area */}
             <div className="flex-1 w-full relative" style={{ marginTop: '60px', background: '#0A1628' }}>
                 {activeLayer === 'heatmap' ? (
                     <div style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
@@ -203,7 +215,6 @@ export function NationalAQIMap() {
                 )}
             </div>
 
-            {/* AQI Legend - satellite only */}
             {activeLayer === 'satellite' && (
                 <div className="absolute bottom-6 left-4 z-[1000]">
                     <div className="p-3 bg-[#0A1628]/90 backdrop-blur-md border border-[#1e2a3b] rounded-xl shadow-xl">
@@ -225,7 +236,6 @@ export function NationalAQIMap() {
                 </div>
             )}
 
-            {/* Fire legend */}
             {showFires && fires?.hotspots && activeLayer === 'satellite' && (
                 <div className="absolute bottom-6 right-4 z-[1000]">
                     <div className="p-3 bg-[#0A1628]/90 backdrop-blur-md border border-[#1e2a3b] rounded-xl shadow-xl">

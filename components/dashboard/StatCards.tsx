@@ -20,7 +20,7 @@ export function StatCards() {
 
             // 1. Fetch Policy Actions count
             const { count: policiesCount } = await supabase
-                .from('policy_recommendations')
+                .from('policy_actions')
                 .select('*', { count: 'exact', head: true })
                 .eq('status', 'pending');
 
@@ -62,6 +62,8 @@ export function StatCards() {
             };
         },
         enabled: !!adminContext,
+        refetchInterval: 30000,
+        refetchOnWindowFocus: true,
     });
 
     if (isLoading || !stats) {

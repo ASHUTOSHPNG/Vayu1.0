@@ -39,7 +39,7 @@ async function checkData() {
         console.log('Readings in last 48h:', count48);
 
         // Check a random location's readings
-        const { data: locations } = await supabase.from('locations').select('id, city').limit(5);
+        const { data: locations } = await supabase.from('wards').select('id, city').limit(5);
         for (const loc of locations || []) {
             const { data: locReadings } = await supabase.from('aqi_readings').select('aqi_value, recorded_at').eq('location_id', loc.id).order('recorded_at', { ascending: false }).limit(1);
             console.log(`Latest reading for ${loc.city} (${loc.id}):`, locReadings?.[0]);

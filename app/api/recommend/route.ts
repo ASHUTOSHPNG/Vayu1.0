@@ -14,9 +14,6 @@ const model = genAI.getGenerativeModel({
     }
 });
 
-
-
-// Using a fallback mock if no API key is set for robust development
 const MOCK_LLM_RESPONSE = {
     severity: "high",
     headline: "Elevated PM10 indicating acute construction dust anomaly.",
@@ -43,7 +40,7 @@ export async function POST(request: Request) {
             anomalyData,
             detectedSources,
             weatherData,
-            fireRiskAssessment // ← NEW optional field
+            fireRiskAssessment
         }: {
             location_id: string;
             locationName: string;
@@ -81,8 +78,7 @@ export async function POST(request: Request) {
 
         // 1. Rate Limiting Check: 1 call per location per 2 hours
         const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-
-        const { data: recentRecs, error: fetchError } = await supabase
+        const { data: recentRecs, error: fetchError } = await (supabase as any)
             .from('policy_recommendations')
             .select('id, created_at')
             .eq('location_id', location_id)
@@ -103,11 +99,9 @@ export async function POST(request: Request) {
         }
 
         // 2. RAG Retrieval
-        // Build a broad query based on the anomaly string and sources
         const primarySource = detectedSources && detectedSources.length > 0 ? detectedSources[0].sourceType : 'unknown';
         const primaryConfidence = detectedSources && detectedSources.length > 0 ? detectedSources[0].confidence : 0;
 
-        // Convert source types to the RAG format (basic matching, can be fine-tuned)
         let ragContextType = '';
         if (primarySource.toLowerCase().includes('traffic')) ragContextType = 'TRAFFIC';
         if (primarySource.toLowerCase().includes('construction')) ragContextType = 'CONSTRUCTION_DUST';
@@ -116,7 +110,6 @@ export async function POST(request: Request) {
 
         const ragQuery = `${anomalyData.summary || ''} ${primarySource}`;
 
-        // 2a. Update RAG retrieval for fire-specific policies
         const tags = [];
         if (detectedSources?.some((s: any) => s.sourceType === 'biomass_burning') && fireRiskAssessment?.hasUpwindFire) {
             tags.push('fire_satellite_confirmed');
@@ -127,6 +120,7 @@ export async function POST(request: Request) {
             ragContextType,
             4
         );
+
         const knowledgeContext = retrievedDocs.map((doc, idx) =>
             `${idx + 1}. [${doc.category}] ${doc.title}: ${doc.content}`
         ).join('\n\n');
@@ -140,13 +134,11 @@ export async function POST(request: Request) {
 - Anomaly Score: ${anomalyData.anomalyScore || 'Unknown'}/10 (Z-score vs 7-day baseline)
 - Duration: Elevated for ${anomalyData.hours || 1} hours
 - Primary Detected Source: ${primarySource} (Confidence: ${primaryConfidence}%)
-
 METEOROLOGICAL CONDITIONS:
 - Wind Speed: ${weatherData?.wind_speed || 'Unknown'} km/h
 - Wind Direction: ${weatherData?.wind_direction || 'Unknown'}°
 - Humidity: ${weatherData?.humidity || 'Unknown'}%
 - Dispersion Factor: ${weatherData?.dispersion_factor || '1.0'}/1.0 (1.0 = ideal dispersion)
-
 ${fireRiskAssessment && fireRiskAssessment.hasUpwindFire
                 ? `
 SATELLITE FIRE INTELLIGENCE (NASA FIRMS — VIIRS/MODIS):
@@ -167,10 +159,8 @@ SATELLITE FIRE INTELLIGENCE (NASA FIRMS):
                     : `
 SATELLITE FIRE INTELLIGENCE: NASA FIRMS data not available for this query.
 `}
-
 RELEVANT POLICY KNOWLEDGE BASE:
 ${knowledgeContext}
-
 Generate a structured JSON response with:
 {
   "severity": "low|moderate|high|critical",
@@ -185,17 +175,12 @@ Generate a structured JSON response with:
     { "lat": number, "lon": number, "frpMW": number, "distanceKm": number }
   ] | null
 }
-
 Instruction for fireCoordinates: "If satellite fire data is provided and hasUpwindFire is true, populate fireCoordinates with the top 3 fires by FRP from the FIRMS data. These will be plotted on the admin dashboard map. If no fire data is available, set to null."
-
 Respond ONLY with the JSON object. No preamble or explanation outside the JSON.`;
 
         let recommendationPayload;
-
         if (!process.env.GOOGLE_API_KEY) {
             console.warn("GOOGLE_API_KEY is not set. Falling back to rule-based mock response.");
-
-            // Very rudimentary generic fallback logic incorporating RAG where possible
             recommendationPayload = {
                 ...MOCK_LLM_RESPONSE,
                 headline: `Action required for ${primarySource} emissions at ${locationName}.`,
@@ -207,11 +192,8 @@ Respond ONLY with the JSON object. No preamble or explanation outside the JSON.`
                 { text: systemPrompt },
                 { text: userPrompt },
             ]);
-
             const responseText = result.response.text();
-
             try {
-                // Gemini with forced JSON response will return valid JSON
                 const cleanedText = responseText.replace(/```json\n?|\n?```/g, '').trim();
                 recommendationPayload = JSON.parse(cleanedText);
             } catch (_parseError) {
@@ -220,39 +202,36 @@ Respond ONLY with the JSON object. No preamble or explanation outside the JSON.`
             }
         }
 
-        // Map severity to enum
         const validSeverities = ['low', 'moderate', 'high', 'critical'];
         const dbSeverity = validSeverities.includes(recommendationPayload.severity?.toLowerCase())
             ? recommendationPayload.severity.toLowerCase()
             : 'moderate';
 
-        // 5. Save to Supabase
-        const { data: insertedRec, error: insertError } = await supabase
+        // 5. Save to Supabase — policy_recommendations renamed to policy_actions
+        const { data: insertedRec, error: insertError } = await (supabase as any)
             .from('policy_recommendations')
             .insert({
                 location_id,
                 trigger_source: primarySource,
-                severity: dbSeverity as Database['public']['Enums']['severity_level'],
+                severity: dbSeverity,
                 anomaly_summary: anomalyData.summary || recommendationPayload.headline,
-                recommendation_text: JSON.stringify(recommendationPayload), // Storing the full JSON structure in text field
+                recommendation_text: JSON.stringify(recommendationPayload),
                 status: 'pending',
                 generated_by: 'ai_engine',
-                fire_risk_data: fireRiskAssessment as any // Persist FIRMS data (cast to any to satisfy Json type)
+                fire_risk_data: fireRiskAssessment ?? null
             })
-
             .select()
             .single();
 
         if (insertError) {
             console.error('Failed to save recommendation to Supabase:', insertError);
-            // We still return the recommendation to the user even if DB save fails, purely for UX resilience
         }
 
         // 6. Return response
         return NextResponse.json({
             success: true,
             data: recommendationPayload,
-            recordId: insertedRec?.id
+            recordId: (insertedRec as any)?.id
         });
 
     } catch (error: Error | any) {

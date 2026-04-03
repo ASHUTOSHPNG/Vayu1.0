@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from 'react';
 import { Bell, ChevronDown, MapPin, Loader2 } from 'lucide-react';
 import { useAQISubscription } from '@/lib/realtime/useAQISubscription';
@@ -7,7 +6,6 @@ import { useAdminContext } from '@/lib/admin/useAdminContext';
 import { useAdminStore } from '@/store/adminStore';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -29,12 +27,11 @@ export function AdminHeader() {
     const { selectedCityId, setSelectedCityId } = useAdminStore();
     const unreadNotifications = 3;
 
-    // Fetch available cities for Central Admin
     const { data: cities, isLoading: isCitiesLoading } = useQuery({
         queryKey: ['available-cities'],
         queryFn: async () => {
-            const { data: locations, error } = await supabase
-                .from('locations')
+            const { data: locations, error } = await (supabase as any)
+                .from('wards')
                 .select('city, aqi_readings(aqi_value, recorded_at)')
                 .order('recorded_at', { foreignTable: 'aqi_readings', ascending: false })
                 .limit(1, { foreignTable: 'aqi_readings' })
@@ -42,21 +39,21 @@ export function AdminHeader() {
 
             if (error) throw error;
 
-            // Group by city and calc avg
-            const cityMap: Record<string, { name: string, aqiTotal: number, count: number }> = {};
+            const locList = (locations ?? []) as Array<{
+                city: string;
+                aqi_readings: Array<{ aqi_value: number; recorded_at: string }>;
+            }>;
 
-            locations.forEach(loc => {
+            const cityMap: Record<string, { name: string, aqiTotal: number, count: number }> = {};
+            locList.forEach(loc => {
                 if (!cityMap[loc.city]) {
                     cityMap[loc.city] = { name: loc.city, aqiTotal: 0, count: 0 };
                 }
-
-                const readings = (loc as any).aqi_readings || [];
-                // Use the latest reading for this specific location
+                const readings = loc.aqi_readings || [];
                 if (readings.length > 0) {
-                    const latestReading = readings.sort((a: any, b: any) =>
+                    const latestReading = readings.sort((a, b) =>
                         new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
                     )[0];
-
                     cityMap[loc.city].aqiTotal += latestReading.aqi_value;
                     cityMap[loc.city].count += 1;
                 }
@@ -85,7 +82,6 @@ export function AdminHeader() {
         const timer = setInterval(() => {
             setCurrentTime(new Date());
         }, 1000);
-
         return () => clearInterval(timer);
     }, []);
 
@@ -95,8 +91,6 @@ export function AdminHeader() {
 
     return (
         <header className="h-[72px] bg-[#0A1628]/80 backdrop-blur-md border-b border-[#1e2a3b] flex items-center justify-between px-6 sticky top-0 z-20">
-
-            {/* Left: City Selector / Context Badge */}
             <div className="flex items-center">
                 {isCityAdmin ? (
                     <TooltipProvider>
@@ -161,20 +155,14 @@ export function AdminHeader() {
                 )}
             </div>
 
-            {/* Right: Time and Notifications */}
             <div className="flex items-center space-x-6">
-
-                {/* Live Indicator */}
                 <div className="flex items-center space-x-2 bg-[#132238] border border-[#1e2a3b] rounded-full px-3 py-1">
                     <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500 animate-[pulse_2s_infinite]' : 'bg-gray-500'}`} />
                     <span className="text-[10px] font-bold tracking-widest text-white uppercase">
                         {isConnected ? 'Live' : 'Offline'}
                     </span>
                 </div>
-
                 <div className="h-4 w-px bg-[#1e2a3b]" />
-
-                {/* Real-time Ticking Clock */}
                 <div className="hidden md:flex flex-col items-end">
                     <p className="text-sm font-bold text-white font-mono tracking-tight">
                         {currentTime ? currentTime.toLocaleTimeString('en-US', {
@@ -192,17 +180,13 @@ export function AdminHeader() {
                         }) : '---'}
                     </p>
                 </div>
-
                 <div className="h-8 w-px bg-[#1e2a3b] mx-2" />
-
-                {/* Notifications */}
                 <button className="relative p-2 text-gray-400 hover:text-white transition-colors rounded-full hover:bg-[#1e2a3b]">
                     <Bell className="h-5 w-5" />
                     {unreadNotifications > 0 && (
                         <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 border-2 border-[#0A1628]" />
                     )}
                 </button>
-
             </div>
         </header>
     );

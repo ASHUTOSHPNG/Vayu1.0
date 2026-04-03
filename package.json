@@ -10,6 +10,7 @@
     "seed:admin": "npx tsx scripts/seed-admin-invitations.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.81.0",
     "@google/generative-ai": "^0.24.1",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/auth-helpers-react": "^0.15.0",

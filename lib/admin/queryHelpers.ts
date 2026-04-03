@@ -12,9 +12,9 @@ export function applyCityFilter(
     query: any,
     adminContext: AdminContext,
     selectedCityId?: string | null,
-    isLocationsTable: boolean = false
+    isWardTable: boolean = false
 ) {
-    const filterKey = isLocationsTable ? 'city' : 'locations.city';
+    const filterKey = isWardTable ? 'city' : 'ward.city';
 
     if (adminContext.type === 'city_admin') {
         const cityName = adminContext.cityFilter.name;

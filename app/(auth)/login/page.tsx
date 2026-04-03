@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -22,7 +21,6 @@ function LoginComponent() {
     const [error, setError] = useState<string | null>(null);
     const [infoMessage, setInfoMessage] = useState<string | null>(null);
     const [infoType, setInfoType] = useState<'success' | 'warning' | null>(null);
-
     const router = useRouter();
     const searchParams = useSearchParams();
     const message = searchParams.get('message');
@@ -35,12 +33,10 @@ function LoginComponent() {
             setInfoMessage("Your session has expired. Please sign in again.");
             setInfoType('warning');
         }
-
         if (message) {
             const timer = setTimeout(() => {
                 setInfoMessage(null);
                 setInfoType(null);
-                // Clear the URL param without refreshing
                 const url = new URL(window.location.href);
                 url.searchParams.delete('message');
                 window.history.replaceState({}, '', url.toString());
@@ -55,13 +51,11 @@ function LoginComponent() {
         e.preventDefault();
         setLoading(true);
         setError(null);
-
         try {
             const { data, error: authError } = await supabase.auth.signInWithPassword({
                 email,
                 password,
             });
-
             if (authError) {
                 const message =
                     authError.message?.toLowerCase().includes('email not confirmed')
@@ -72,7 +66,6 @@ function LoginComponent() {
                 setLoading(false);
                 return;
             }
-
             if (data.user) {
                 // Fetch profile
                 const { data: profile, error: profileError } = await supabase
@@ -93,7 +86,7 @@ function LoginComponent() {
                 // Update last_login_at
                 await supabase
                     .from('user_profiles')
-                    .update({ last_login_at: new Date().toISOString() })
+                    .update({ last_login_at: new Date().toISOString() } as any)
                     .eq('id', data.user.id);
 
                 toast.success("Welcome, Admin");

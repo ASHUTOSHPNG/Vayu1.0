@@ -7,7 +7,7 @@ async function fetchRecentReadings(locationId: string): Promise<AQReading[]> {
     const { data } = await supabase
         .from('aqi_readings')
         .select('*')
-        .eq('location_id', locationId)
+        .eq('ward_id', locationId)
         .order('recorded_at', { ascending: false })
         .limit(24);
 
@@ -26,9 +26,7 @@ async function fetchRecentReadings(locationId: string): Promise<AQReading[]> {
 }
 
 async function fetchCurrentWeather(lat: number, lon: number): Promise<WeatherData> {
-    const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || '';
-
     try {
         const res = await fetch(`${baseUrl}/api/weather?lat=${lat}&lon=${lon}&type=current`);
         if (!res.ok) throw new Error('Weather API failed');
@@ -48,7 +46,6 @@ async function fetchCurrentWeather(lat: number, lon: number): Promise<WeatherDat
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        // Support both snake_case and camelCase
         const location_id = body.location_id || body.locationId;
         const lat = body.lat;
         const lon = body.lon;
@@ -60,7 +57,6 @@ export async function POST(request: Request) {
 
         // 1. Fetch data
         const history = await fetchRecentReadings(location_id);
-
         if (!history || history.length === 0) {
             return NextResponse.json({ error: 'No historical readings found for location: ' + location_id }, { status: 404 });
         }
@@ -72,21 +68,20 @@ export async function POST(request: Request) {
         if (lat && lon) {
             weather = await fetchCurrentWeather(lat, lon);
         } else {
-            // Fallback to weather data stored in the latest reading
             const supabase = await createAdminClient();
             const { data: latest } = await supabase
                 .from('aqi_readings')
-                .select('wind_speed, wind_direction, temperature, humidity')
-                .eq('location_id', location_id)
+                .select('*')
+                .eq('ward_id', location_id)
                 .order('recorded_at', { ascending: false })
                 .limit(1)
                 .single();
 
             weather = {
-                windSpeed: latest?.wind_speed || 0,
-                windDirection: latest?.wind_direction || 0,
-                temperature: latest?.temperature || 0,
-                humidity: latest?.humidity || 0
+                windSpeed: (latest as any)?.wind_speed || 0,
+                windDirection: (latest as any)?.wind_direction || 0,
+                temperature: (latest as any)?.temperature || 0,
+                humidity: (latest as any)?.humidity || 0
             };
         }
 
@@ -95,10 +90,10 @@ export async function POST(request: Request) {
         const anomalyScore = computeAnomalyScore(currentReading, history);
         const isSustained = detectSustainedAnomaly(history, 6);
 
-        // 4. Save to database
+        // 4. Save to database — pollution_sources doesn't exist in schema
         const supabase = await createAdminClient();
         if (signatures.length > 0) {
-            await supabase.from('pollution_sources').insert({
+            await (supabase as any).from('pollution_sources').insert({
                 location_id,
                 source_type: signatures[0].sourceType,
                 confidence_score: signatures[0].confidence,
@@ -109,7 +104,7 @@ export async function POST(request: Request) {
                     is_sustained: isSustained,
                     indicators: signatures[0].indicators,
                     weather_at_detection: weather
-                } as any
+                }
             });
         }
 

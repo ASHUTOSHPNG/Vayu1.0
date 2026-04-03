@@ -1,5 +1,4 @@
 'use client';
-
 import React, { useState, useEffect, useMemo, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -15,19 +14,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import {
-    Info,
-    RefreshCcw,
-    History,
-    TrendingUp,
-    ArrowLeftRight,
-    Globe,
-    MinusCircle,
-    PlusCircle,
-    Wind,
-    Activity,
-    Flame,
-    MapPin,
-    Sparkles,
+    Info, RefreshCcw, History, TrendingUp, ArrowLeftRight,
+    Globe, MinusCircle, PlusCircle, Wind, Activity, Flame, MapPin, Sparkles,
 } from 'lucide-react';
 import { getAQIDisplay } from '@/lib/aqi-utils';
 import { useAQISubscription } from '@/lib/realtime/useAQISubscription';
@@ -62,17 +50,10 @@ interface Location {
 
 async function fetchLiveAQI(lat: number, lon: number) {
     try {
-        const response = await fetch(`/api/aqi?lat=${lat}&lon=${lon}&source=auto`, {
-            cache: 'no-store',
-        });
+        const response = await fetch(`/api/aqi?lat=${lat}&lon=${lon}&source=auto`, { cache: 'no-store' });
         if (!response.ok) return null;
-
         const data = await response.json();
-        return {
-            aqi: data?.aqi,
-            pollutants: data?.pollutants,
-            timestamp: data?.timestamp,
-        };
+        return { aqi: data?.aqi, pollutants: data?.pollutants, timestamp: data?.timestamp };
     } catch (error) {
         console.error('Failed to fetch live AQI', error);
         return null;
@@ -82,18 +63,20 @@ async function fetchLiveAQI(lat: number, lon: number) {
 const fetchDataForLocation = async (name: string): Promise<Location> => {
     const supabase = createClient();
 
-    const { data: dbLocation } = await supabase
-        .from('locations')
+    // Query wards table (previously 'locations')
+    const { data: dbLocation } = await (supabase as any)
+        .from('wards')
         .select('*')
         .or(`name.ilike.%${name}%,city.ilike.%${name}%`)
         .limit(1)
         .maybeSingle();
 
     if (dbLocation) {
-        const { data: latestReading } = await supabase
+        // aqi_readings uses ward_id, not location_id
+        const { data: latestReading } = await (supabase as any)
             .from('aqi_readings')
             .select('*')
-            .eq('location_id', dbLocation.id)
+            .eq('ward_id', dbLocation.id)
             .order('recorded_at', { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -167,41 +150,28 @@ function SearchParamsHandler({ onSearch }: { onSearch: (q: string) => void }) {
     const searchParams = useSearchParams();
     const query = searchParams.get('q');
     const lastQueryRef = React.useRef<string | null>(null);
-
     useEffect(() => {
         if (query && query !== lastQueryRef.current) {
             onSearch(query);
             lastQueryRef.current = query;
         }
     }, [query, onSearch]);
-
     return null;
 }
 
 function AnimatedBackground() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-        
         const particles: Array<{
-            x: number;
-            y: number;
-            vx: number;
-            vy: number;
-            size: number;
-            opacity: number;
-            type: 'smog' | 'clean' | 'wind';
-            drift: number;
+            x: number; y: number; vx: number; vy: number;
+            size: number; opacity: number; type: 'smog' | 'clean' | 'wind'; drift: number;
         }> = [];
-        
         for (let i = 0; i < 30; i++) {
             particles.push({
                 x: Math.random() * canvas.width,
@@ -214,64 +184,41 @@ function AnimatedBackground() {
                 drift: Math.random() * Math.PI * 2,
             });
         }
-        
         let animationId: number;
         let time = 0;
-        
         const animate = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             time += 0.008;
-            
             particles.forEach((p) => {
                 p.x += p.vx + Math.sin(time + p.drift) * 0.2;
                 p.y += p.vy;
-                
-                if (p.y < -100) {
-                    p.y = canvas.height + 100;
-                    p.x = Math.random() * canvas.width;
-                }
+                if (p.y < -100) { p.y = canvas.height + 100; p.x = Math.random() * canvas.width; }
                 if (p.x > canvas.width + 100) p.x = -100;
                 if (p.x < -100) p.x = canvas.width + 100;
-                
                 if (p.type === 'smog') {
                     const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
                     gradient.addColorStop(0, `rgba(100, 95, 85, ${p.opacity})`);
                     gradient.addColorStop(0.5, `rgba(70, 65, 60, ${p.opacity * 0.5})`);
                     gradient.addColorStop(1, 'rgba(50, 45, 40, 0)');
                     ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                    ctx.fill();
                 } else {
                     const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
                     gradient.addColorStop(0, `rgba(45, 212, 191, ${p.opacity * 1.5})`);
                     gradient.addColorStop(0.5, `rgba(20, 184, 166, ${p.opacity * 0.8})`);
                     gradient.addColorStop(1, 'rgba(13, 148, 136, 0)');
                     ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                    ctx.fill();
                 }
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
             });
-            
             animationId = requestAnimationFrame(animate);
         };
-        
         animate();
-        
-        const handleResize = () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        };
-        
+        const handleResize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
         window.addEventListener('resize', handleResize);
-        
-        return () => {
-            cancelAnimationFrame(animationId);
-            window.removeEventListener('resize', handleResize);
-        };
+        return () => { cancelAnimationFrame(animationId); window.removeEventListener('resize', handleResize); };
     }, []);
-    
     return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />;
 }
 
@@ -291,7 +238,6 @@ export default function SearchPage() {
     const [fireRisk, setFireRisk] = useState<FireRiskAssessment | null>(null);
     const [nearbyStations, setNearbyStations] = useState<any[]>([]);
     const [trendData, setTrendData] = useState<any[]>([]);
-
     const { isConnected } = useAQISubscription(selectedLocation?.id ?? undefined);
     const readings = useAQIStore((state) => state.readings);
 
@@ -299,7 +245,6 @@ export default function SearchPage() {
         if (!selectedLocation?.id) return selectedLocation;
         const liveReading = readings[selectedLocation.id];
         if (!liveReading) return selectedLocation;
-
         return {
             ...selectedLocation,
             aqi: liveReading.aqi,
@@ -310,20 +255,17 @@ export default function SearchPage() {
 
     useEffect(() => {
         if (!selectedLocation) return;
-
         const fetchExtraData = async () => {
             const supabase = createClient();
-
             if (selectedLocation.id) {
-                const { data: history } = await supabase
+                const { data: history } = await (supabase as any)
                     .from('aqi_readings')
                     .select('aqi_value, recorded_at')
-                    .eq('location_id', selectedLocation.id)
+                    .eq('ward_id', selectedLocation.id)
                     .order('recorded_at', { ascending: false })
                     .limit(24);
-
                 if (history && history.length > 0) {
-                    setTrendData(history.reverse().map(h => ({
+                    setTrendData(history.reverse().map((h: any) => ({
                         time: new Date(h.recorded_at).getHours() + ':00',
                         aqi: h.aqi_value
                     })));
@@ -340,29 +282,23 @@ export default function SearchPage() {
                 })));
             }
 
-            const { data: otherLocs } = await supabase
-                .from('locations')
+            const { data: otherLocs } = await (supabase as any)
+                .from('wards')
                 .select('id, name, latitude, longitude')
                 .eq('city', selectedLocation.city)
                 .neq('name', selectedLocation.name)
                 .limit(5);
 
             if (otherLocs && otherLocs.length > 0) {
-                const stationIds = otherLocs.map(l => l.id);
-                const { data: latestReadings } = await supabase
+                const stationIds = otherLocs.map((l: any) => l.id);
+                const { data: latestReadings } = await (supabase as any)
                     .from('aqi_readings')
-                    .select('location_id, aqi_value')
-                    .in('location_id', stationIds)
+                    .select('ward_id, aqi_value')
+                    .in('ward_id', stationIds)
                     .order('recorded_at', { ascending: false });
-
-                const formatted = otherLocs.map(l => {
-                    const reading = latestReadings?.find(r => r.location_id === l.id);
-                    return {
-                        id: l.id,
-                        name: l.name,
-                        distance: 2.5 + Math.random() * 5,
-                        aqi: reading?.aqi_value || 100
-                    };
+                const formatted = otherLocs.map((l: any) => {
+                    const reading = latestReadings?.find((r: any) => r.ward_id === l.id);
+                    return { id: l.id, name: l.name, distance: 2.5 + Math.random() * 5, aqi: reading?.aqi_value || 100 };
                 });
                 setNearbyStations(formatted);
             } else {
@@ -372,56 +308,39 @@ export default function SearchPage() {
                 ]);
             }
         };
-
         fetchExtraData();
     }, [selectedLocation]);
 
     useEffect(() => {
         const saved = localStorage.getItem('recent_searches');
         if (saved) {
-            try {
-                setRecentSearches(JSON.parse(saved));
-            } catch (e) {
-                console.error("Failed to parse recent searches", e);
-            }
+            try { setRecentSearches(JSON.parse(saved)); } catch (e) { console.error("Failed to parse recent searches", e); }
         }
     }, []);
 
     const handleSearch = React.useCallback(async (name: string) => {
         setIsLoading(true);
         const data = await fetchDataForLocation(name);
-
         if (isComparing) {
             setCompareLocation(data);
         } else {
             setSelectedLocation(data);
-
             if (data.id && data.pollutants) {
                 useAQIStore.getState().setReading(data.id, {
-                    aqi: data.aqi,
-                    pollutants: data.pollutants as any,
-                    source: 'auto',
-                    timestamp: new Date().toISOString()
+                    aqi: data.aqi, pollutants: data.pollutants as any,
+                    source: 'auto', timestamp: new Date().toISOString()
                 });
             }
-
             try {
                 const fireResp = await fetch(`/api/firms?lat=${data.lat}&lon=${data.lng}&radius=300&days=2`);
-                if (fireResp.ok) {
-                    const fireData = await fireResp.json();
-                    setFireRisk(fireData);
-                }
-            } catch (e) {
-                console.error("Failed to fetch fire data during search", e);
-            }
-
+                if (fireResp.ok) setFireRisk(await fireResp.json());
+            } catch (e) { console.error("Failed to fetch fire data during search", e); }
             setRecentSearches(prev => {
                 const updated = [name, ...prev.filter(s => s !== name)].slice(0, 5);
                 localStorage.setItem('recent_searches', JSON.stringify(updated));
                 return updated;
             });
         }
-
         setIsLoading(false);
     }, [isComparing]);
 
@@ -431,41 +350,30 @@ export default function SearchPage() {
         const storageKey = `last_refresh_${selectedLocation.name.toLowerCase().replace(/\s+/g, '_')}`;
         const lastRefresh = localStorage.getItem(storageKey);
         const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-
         if (lastRefresh && now - parseInt(lastRefresh) < REFRESH_INTERVAL_MS) {
             const remaining = Math.ceil((REFRESH_INTERVAL_MS - (now - parseInt(lastRefresh))) / 60000);
             alert(`Rate limit reached. Please wait ${remaining} minute(s) before refreshing ${selectedLocation.name} again.`);
             return;
         }
-
         setIsRefreshing(true);
         localStorage.setItem(storageKey, now.toString());
         const data = await fetchDataForLocation(selectedLocation.name);
         setSelectedLocation(data);
-
         if (data.id && data.pollutants) {
             useAQIStore.getState().setReading(data.id, {
-                aqi: data.aqi,
-                pollutants: data.pollutants as any,
-                source: 'auto',
-                timestamp: new Date().toISOString()
+                aqi: data.aqi, pollutants: data.pollutants as any,
+                source: 'auto', timestamp: new Date().toISOString()
             });
         }
         try {
             const fireResp = await fetch(`/api/firms?lat=${data.lat}&lon=${data.lng}&radius=300&days=2`);
-            if (fireResp.ok) {
-                const fireData = await fireResp.json();
-                setFireRisk(fireData);
-            }
-        } catch (e) {
-            console.error("Failed to refresh fire data", e);
-        }
+            if (fireResp.ok) setFireRisk(await fireResp.json());
+        } catch (e) { console.error("Failed to refresh fire data", e); }
         setIsRefreshing(false);
     };
 
     const pollutantComparison = useMemo(() => {
         const p = liveSelectedLocation?.pollutants;
-
         return [
             { name: 'PM2.5', unit: 'µg/m³', loc1Value: p?.pm25 || 156.4, loc2Value: 142.1 },
             { name: 'PM10', unit: 'µg/m³', loc1Value: p?.pm10 || 245.2, loc2Value: 210.8 },
@@ -479,84 +387,49 @@ export default function SearchPage() {
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 relative overflow-hidden">
             <AnimatedBackground />
-            
             <div className="absolute inset-0">
                 <div className="absolute top-0 left-0 right-0 h-[30vh] bg-gradient-to-b from-teal-900/20 via-transparent to-transparent" />
                 <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-teal-500/10 rounded-full blur-[96px]" />
                 <div className="absolute bottom-1/4 right-1/4 w-56 h-56 bg-cyan-400/10 rounded-full blur-[80px]" />
             </div>
-
             <div className="container mx-auto max-w-6xl px-4 py-12 relative z-10">
                 <Suspense fallback={null}>
                     <SearchParamsHandler onSearch={handleSearch} />
                 </Suspense>
-
-                {/* Search Interface */}
-                <motion.section 
-                    initial="initial"
-                    animate="animate"
-                    variants={fadeInUp}
-                    className="flex flex-col items-center gap-8 text-center mt-8 mb-16"
-                >
+                <motion.section initial="initial" animate="animate" variants={fadeInUp}
+                    className="flex flex-col items-center gap-8 text-center mt-8 mb-16">
                     <div className="space-y-4">
-                        <motion.div 
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.1 }}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-300 text-sm font-medium"
-                        >
-                            <Sparkles className="w-4 h-4" />
-                            Air Quality Explorer
+                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-300 text-sm font-medium">
+                            <Sparkles className="w-4 h-4" /> Air Quality Explorer
                         </motion.div>
-                        <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight">
-                            Search Any Location
-                        </h1>
-                        <p className="text-zinc-400 max-w-lg mx-auto text-lg">
-                            Enter a city or neighborhood to discover real-time air quality and health insights.
-                        </p>
+                        <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight">Search Any Location</h1>
+                        <p className="text-zinc-400 max-w-lg mx-auto text-lg">Enter a city or neighborhood to discover real-time air quality and health insights.</p>
                     </div>
-
                     <div className="w-full max-w-2xl space-y-6">
                         <div className="relative group">
                             <div className="absolute -inset-0.5 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500" />
-                            <div className="relative">
-                                <LocationSearch onSelect={(l) => handleSearch(l.name)} />
-                            </div>
+                            <div className="relative"><LocationSearch onSelect={(l) => handleSearch(l.name)} /></div>
                         </div>
-
                         <div className="flex flex-col gap-4">
                             {recentSearches.length > 0 && (
-                                <motion.div 
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    className="flex flex-wrap items-center justify-center gap-3"
-                                >
+                                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                    className="flex flex-wrap items-center justify-center gap-3">
                                     <History className="h-4 w-4 text-zinc-500" />
                                     {recentSearches.map(city => (
-                                        <button
-                                            key={city}
-                                            onClick={() => handleSearch(city)}
-                                            className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-zinc-300 hover:bg-teal-500/20 hover:border-teal-500/30 hover:text-teal-300 transition-all"
-                                        >
+                                        <button key={city} onClick={() => handleSearch(city)}
+                                            className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-zinc-300 hover:bg-teal-500/20 hover:border-teal-500/30 hover:text-teal-300 transition-all">
                                             {city}
                                         </button>
                                     ))}
                                 </motion.div>
                             )}
-
-                            <motion.div 
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ delay: 0.2 }}
-                                className="flex flex-wrap items-center justify-center gap-3"
-                            >
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
+                                className="flex flex-wrap items-center justify-center gap-3">
                                 <TrendingUp className="h-4 w-4 text-zinc-500" />
                                 {POPULAR_CITIES.map(city => (
-                                    <button
-                                        key={city}
-                                        onClick={() => handleSearch(city)}
-                                        className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-zinc-400 hover:bg-teal-500/10 hover:border-teal-500/30 hover:text-teal-300 transition-all"
-                                    >
+                                    <button key={city} onClick={() => handleSearch(city)}
+                                        className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-zinc-400 hover:bg-teal-500/10 hover:border-teal-500/30 hover:text-teal-300 transition-all">
                                         {city}
                                     </button>
                                 ))}
@@ -567,12 +440,8 @@ export default function SearchPage() {
 
                 <AnimatePresence>
                     {isLoading && (
-                        <motion.div 
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="flex flex-col items-center justify-center py-20 gap-4"
-                        >
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="flex flex-col items-center justify-center py-20 gap-4">
                             <div className="relative">
                                 <div className="w-16 h-16 rounded-full border-4 border-teal-500/20 border-t-teal-500 animate-spin" />
                                 <Activity className="absolute inset-0 m-auto h-6 w-6 text-teal-400" />
@@ -583,22 +452,10 @@ export default function SearchPage() {
                 </AnimatePresence>
 
                 {liveSelectedLocation && !isLoading && (
-                    <motion.div 
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-10"
-                    >
-                        <div className="lg:col-span-3">
-                            <PushAlertBanner />
-                        </div>
-
-                        {/* Results Header */}
-                        <motion.div 
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.1 }}
-                            className="flex flex-col md:flex-row items-center justify-between gap-6 bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl"
-                        >
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-10">
+                        <div className="lg:col-span-3"><PushAlertBanner /></div>
+                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+                            className="flex flex-col md:flex-row items-center justify-between gap-6 bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl">
                             <div className="flex items-center gap-5">
                                 <div className="relative">
                                     <div className="p-4 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/30 text-2xl">
@@ -615,9 +472,7 @@ export default function SearchPage() {
                                     <h2 className="text-3xl font-black text-white flex items-center gap-3">
                                         {liveSelectedLocation.name}
                                         {isConnected && (
-                                            <Badge className="bg-green-500/20 text-green-400 border-green-500/30 animate-pulse py-0.5 px-2 text-[10px] font-bold uppercase tracking-wider">
-                                                Live
-                                            </Badge>
+                                            <Badge className="bg-green-500/20 text-green-400 border-green-500/30 animate-pulse py-0.5 px-2 text-[10px] font-bold uppercase tracking-wider">Live</Badge>
                                         )}
                                     </h2>
                                     <div className="flex items-center gap-2 text-zinc-400 mt-1">
@@ -627,22 +482,14 @@ export default function SearchPage() {
                                     </div>
                                 </div>
                             </div>
-
                             <div className="flex flex-col items-end gap-3.5">
-                                <div className="flex items-center gap-2">
-                                    <Badge variant="secondary" className="bg-teal-500/10 text-teal-300 border-teal-500/20 flex items-center gap-2 py-1.5 px-3">
-                                        <Globe className="h-3 w-3" /> Satellite + Meteorological
-                                    </Badge>
-                                </div>
+                                <Badge variant="secondary" className="bg-teal-500/10 text-teal-300 border-teal-500/20 flex items-center gap-2 py-1.5 px-3">
+                                    <Globe className="h-3 w-3" /> Satellite + Meteorological
+                                </Badge>
                                 <div className="flex items-center gap-3 text-sm text-zinc-500 font-medium">
                                     <span>Updated: {liveSelectedLocation.lastUpdated}</span>
-                                    <Button
-                                        disabled={isRefreshing}
-                                        onClick={handleRefresh}
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 rounded-full hover:bg-teal-500/20 hover:text-teal-400 text-zinc-400"
-                                    >
+                                    <Button disabled={isRefreshing} onClick={handleRefresh} variant="ghost" size="icon"
+                                        className="h-8 w-8 rounded-full hover:bg-teal-500/20 hover:text-teal-400 text-zinc-400">
                                         <RefreshCcw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                                     </Button>
                                 </div>
@@ -651,21 +498,14 @@ export default function SearchPage() {
 
                         {!isComparing ? (
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                {/* Left Column */}
                                 <div className="lg:col-span-2 space-y-8">
-                                    {/* AQI Display */}
-                                    <motion.div 
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: 0.2 }}
-                                        className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white/5 backdrop-blur-xl border border-white/10 p-10 rounded-3xl relative overflow-hidden"
-                                    >
+                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                                        className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white/5 backdrop-blur-xl border border-white/10 p-10 rounded-3xl relative overflow-hidden">
                                         <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 to-cyan-500/5" />
                                         {isConnected && (
                                             <div className="absolute top-4 right-4">
                                                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-[10px] font-bold text-green-400">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                                    Live Sync
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Live Sync
                                                 </div>
                                             </div>
                                         )}
@@ -679,9 +519,7 @@ export default function SearchPage() {
                                                     {getAQIDisplay(liveSelectedLocation.aqi).category}
                                                 </p>
                                             </div>
-                                            <p className="text-zinc-400 leading-relaxed text-left">
-                                                {getAQIDisplay(liveSelectedLocation.aqi).description}
-                                            </p>
+                                            <p className="text-zinc-400 leading-relaxed text-left">{getAQIDisplay(liveSelectedLocation.aqi).description}</p>
                                             <div className="pt-4 border-t border-white/10 text-left">
                                                 <p className="text-xs text-zinc-500 flex items-center gap-2">
                                                     <Info className="h-3 w-3" /> OpenAQ Network + Meteorological Analysis
@@ -689,14 +527,8 @@ export default function SearchPage() {
                                             </div>
                                         </div>
                                     </motion.div>
-
-                                    {/* Pollutant Cards */}
-                                    <motion.div 
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: 0.3 }}
-                                        className="grid grid-cols-2 md:grid-cols-3 gap-4"
-                                    >
+                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+                                        className="grid grid-cols-2 md:grid-cols-3 gap-4">
                                         {[
                                             { name: 'PM2.5', value: liveSelectedLocation.pollutants?.pm25 || 45.2, unit: 'µg/m³', description: 'Fine particulate matter smaller than 2.5 microns, penetrates deep into lungs.' },
                                             { name: 'PM10', value: liveSelectedLocation.pollutants?.pm10 || 78.5, unit: 'µg/m³', description: 'Coarse particulate matter, can irritate respiratory system.' },
@@ -708,77 +540,40 @@ export default function SearchPage() {
                                             <PollutantCard key={pollutant.name} {...pollutant} />
                                         ))}
                                     </motion.div>
-
                                     <HealthAdvisory aqi={liveSelectedLocation.aqi} />
-
-                                    <motion.div 
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: 0.4 }}
-                                    >
+                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
                                         <AQITrendChart data={trendData} />
                                     </motion.div>
-
-                                    <motion.div 
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: 0.5 }}
-                                        className="flex justify-center"
-                                    >
-                                        <Button
-                                            onClick={() => setIsComparing(true)}
-                                            className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white rounded-2xl h-14 px-8 font-bold gap-3 shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 transition-all hover:-translate-y-0.5"
-                                        >
+                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="flex justify-center">
+                                        <Button onClick={() => setIsComparing(true)}
+                                            className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white rounded-2xl h-14 px-8 font-bold gap-3 shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 transition-all hover:-translate-y-0.5">
                                             <PlusCircle className="h-5 w-5" /> Compare with another location
                                         </Button>
                                     </motion.div>
                                 </div>
-
-                                {/* Right Column */}
                                 <div className="space-y-6 text-left">
-                                    <motion.div 
-                                        initial={{ opacity: 0, x: 10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.3 }}
-                                    >
-                                        <NearbyStations
-                                            stations={nearbyStations}
-                                            onSelect={(s) => handleSearch(s.name)}
-                                        />
+                                    <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }}>
+                                        <NearbyStations stations={nearbyStations} onSelect={(s) => handleSearch(s.name)} />
                                     </motion.div>
-
-                                    {/* Fire Activity Card */}
-                                    <motion.div 
-                                        initial={{ opacity: 0, x: 10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.4 }}
-                                    >
+                                    <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }}>
                                         <Card className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 space-y-4 hover:border-orange-500/20 transition-colors">
                                             <div className="flex items-center justify-between">
                                                 <h3 className="font-bold text-white flex items-center gap-2">
-                                                    <Flame className="h-4 w-4 text-orange-500" />
-                                                    Nearby Fire Activity
+                                                    <Flame className="h-4 w-4 text-orange-500" /> Nearby Fire Activity
                                                 </h3>
                                                 {fireRisk && fireRisk.totalFiresInRegion > 0 && (
-                                                    <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 font-bold">
-                                                        {fireRisk.totalFiresInRegion} Sensors
-                                                    </Badge>
+                                                    <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 font-bold">{fireRisk.totalFiresInRegion} Sensors</Badge>
                                                 )}
                                             </div>
-
                                             {!fireRisk || fireRisk.totalFiresInRegion === 0 ? (
-                                                <p className="text-zinc-500 text-sm py-2">
-                                                    No active fires detected within 300km. <span className="text-emerald-500">✓</span>
-                                                </p>
+                                                <p className="text-zinc-500 text-sm py-2">No active fires detected within 300km. <span className="text-emerald-500">✓</span></p>
                                             ) : (
                                                 <div className="space-y-4">
                                                     <div className="space-y-3">
                                                         {fireRisk.hotspots.slice(0, 4).map((fire, idx) => (
                                                             <div key={idx} className="flex items-center justify-between text-xs pb-3 border-b border-white/5 last:border-0 last:pb-0">
                                                                 <div className="flex flex-col gap-0.5">
-                                                                    <span className="font-bold text-zinc-300">
-                                                                        {Math.round(fire.distanceKm || 0)}km • {degreesToCardinal(fire.windBearing || 0)}
-                                                                    </span>
+                                                                    <span className="font-bold text-zinc-300">{Math.round(fire.distanceKm || 0)}km • {degreesToCardinal(fire.windBearing || 0)}</span>
                                                                     <span className="text-zinc-500 text-[10px] uppercase font-bold tracking-tight">Upwind Hotspot</span>
                                                                 </div>
                                                                 <div className="text-right">
@@ -788,22 +583,12 @@ export default function SearchPage() {
                                                             </div>
                                                         ))}
                                                     </div>
-                                                    <div className="pt-2">
-                                                        <p className="text-[10px] text-zinc-500 italic">
-                                                            Updated every 3–12 hours via NASA VIIRS
-                                                        </p>
-                                                    </div>
+                                                    <p className="text-[10px] text-zinc-500 italic pt-2">Updated every 3–12 hours via NASA VIIRS</p>
                                                 </div>
                                             )}
                                         </Card>
                                     </motion.div>
-
-                                    {/* Network Join Card */}
-                                    <motion.div 
-                                        initial={{ opacity: 0, x: 10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.5 }}
-                                    >
+                                    <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5 }}>
                                         <Card className="p-6 bg-gradient-to-br from-teal-600 to-cyan-600 border-none overflow-hidden relative group">
                                             <div className="absolute inset-0 bg-gradient-to-br from-teal-700/50 to-cyan-700/50" />
                                             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl group-hover:bg-white/20 transition-all duration-500" />
@@ -818,31 +603,17 @@ export default function SearchPage() {
                                 </div>
                             </div>
                         ) : (
-                            <motion.div 
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="space-y-12"
-                            >
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12">
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-2xl font-black text-white">Comparison View</h3>
-                                    <Button
-                                        onClick={() => {
-                                            setIsComparing(false);
-                                            setCompareLocation(null);
-                                        }}
-                                        variant="ghost"
-                                        className="text-zinc-400 hover:text-red-400 font-bold gap-2 hover:bg-red-500/10"
-                                    >
+                                    <Button onClick={() => { setIsComparing(false); setCompareLocation(null); }}
+                                        variant="ghost" className="text-zinc-400 hover:text-red-400 font-bold gap-2 hover:bg-red-500/10">
                                         <MinusCircle className="h-5 w-5" /> Exit Comparison
                                     </Button>
                                 </div>
-
                                 {!compareLocation ? (
-                                    <motion.div 
-                                        initial={{ opacity: 0, scale: 0.95 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        className="flex flex-col items-center justify-center py-20 bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 gap-6"
-                                    >
+                                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                                        className="flex flex-col items-center justify-center py-20 bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 gap-6">
                                         <div className="p-5 rounded-2xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 border border-teal-500/30">
                                             <ArrowLeftRight className="h-10 w-10 text-teal-400" />
                                         </div>
@@ -850,9 +621,7 @@ export default function SearchPage() {
                                             <p className="text-xl font-bold text-white">Select a second location</p>
                                             <p className="text-zinc-400 text-sm max-w-xs">Search for another city or area to compare its air quality side-by-side with {liveSelectedLocation.name}.</p>
                                         </div>
-                                        <div className="w-full max-w-md">
-                                            <LocationSearch onSelect={(l) => handleSearch(l.name)} />
-                                        </div>
+                                        <div className="w-full max-w-md"><LocationSearch onSelect={(l) => handleSearch(l.name)} /></div>
                                     </motion.div>
                                 ) : (
                                     <ComparisonView

@@ -1,6 +1,5 @@
 "use client";
-
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { WardDataTable, WardMetric } from '@/components/dashboard/WardDataTable';
 import { WardDetailPanel } from '@/components/dashboard/WardDetailPanel';
 import { Button } from '@/components/ui/button';
@@ -31,47 +30,43 @@ export default function WardAnalysisPage() {
     const supabase = createClient();
     const { adminContext, cityName } = useAdminContext();
     const { selectedCityId } = useAdminStore();
-
     const activeCityName = selectedCityId || cityName;
-
     const [selectedWard, setSelectedWard] = useState<WardMetric | null>(null);
     const [recommendation, setRecommendation] = useState<PolicyRecommendation | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // Fetch real-time ward data
     const { data: wardsData, isLoading } = useQuery({
         queryKey: ['ward-metrics', adminContext, selectedCityId],
         queryFn: async () => {
             if (!adminContext) return [];
 
             // 1. Fetch locations in the city
-            let locQuery = supabase.from('locations').select('*');
+            let locQuery = (supabase as any).from('wards').select('*');
             locQuery = applyCityFilter(locQuery, adminContext, selectedCityId, true);
             const { data: locations, error: locError } = await locQuery;
             if (locError) throw locError;
             if (!locations.length) return [];
 
-            const locationIds = locations.map(l => l.id);
+            const locationIds = locations.map((l: any) => l.id);
 
             // 2. Fetch latest AQI readings for these locations
-            const { data: readings, error: readingError } = await supabase
+            const { data: readings, error: readingError } = await (supabase as any)
                 .from('aqi_readings')
                 .select('*')
                 .in('location_id', locationIds)
                 .order('recorded_at', { ascending: false });
-
             if (readingError) throw readingError;
 
             // Group by location and take latest
             const latestReadings: Record<string, any> = {};
-            (readings as any[]).forEach(r => {
+            (readings as any[]).forEach((r: any) => {
                 if (!latestReadings[r.location_id]) {
                     latestReadings[r.location_id] = r;
                 }
             });
 
             // 3. Map to WardMetric
-            return locations.map(loc => {
+            return (locations as any[]).map((loc: any) => {
                 const reading = latestReadings[loc.id] || {};
                 return {
                     id: loc.id,
@@ -84,10 +79,10 @@ export default function WardAnalysisPage() {
                     topSource: reading.source || 'STATIONARY',
                     lastUpdated: reading.recorded_at || new Date().toISOString()
                 } as WardMetric;
-            }).sort((a, b) => b.aqiValue - a.aqiValue);
+            }).sort((a: WardMetric, b: WardMetric) => b.aqiValue - a.aqiValue);
         },
         enabled: !!adminContext,
-        refetchInterval: 30000 // Refresh every 30s
+        refetchInterval: 30000
     });
 
     const recommendMutation = useMutation({
@@ -124,7 +119,6 @@ export default function WardAnalysisPage() {
                         {selectedCityId ? 'Multi-Jurisdictional' : adminContext?.type === 'city_admin' ? 'Local Corporation' : 'National'} Monitoring Interface
                     </p>
                 </div>
-
                 <div className="flex items-center gap-3">
                     <Tabs defaultValue="7d" className="w-[150px]">
                         <TabsList className="bg-[#132238] border border-[#1e2a3b] h-9">
@@ -132,7 +126,6 @@ export default function WardAnalysisPage() {
                             <TabsTrigger value="30d" className="text-xs">30D</TabsTrigger>
                         </TabsList>
                     </Tabs>
-
                     <Button variant="outline" className="border-[#1e2a3b] bg-[#132238] text-gray-400 hover:text-white h-9 px-3">
                         <FileOutput className="h-4 w-4 mr-2" /> Export
                     </Button>
@@ -179,14 +172,12 @@ export default function WardAnalysisPage() {
                             Automated intervention strategy for {selectedWard?.name} based on current pollutants and ML source detection.
                         </DialogDescription>
                     </DialogHeader>
-
                     {recommendation && (
                         <div className="space-y-6 py-4">
                             <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
                                 <h4 className="text-sm font-bold text-red-400 mb-1 uppercase tracking-wide">Threat Assessment</h4>
                                 <p className="text-sm text-gray-300 italic">{recommendation.reasoning || recommendation.anomaly_summary}</p>
                             </div>
-
                             <div className="space-y-4">
                                 <h4 className="text-sm font-bold text-white border-l-2 border-[#00D4FF] pl-3">Recommended Actions</h4>
                                 <ul className="space-y-2">
@@ -200,7 +191,6 @@ export default function WardAnalysisPage() {
                                         ))}
                                 </ul>
                             </div>
-
                             <div className="flex justify-end pt-4 border-t border-[#1e2a3b]">
                                 <Button
                                     className="bg-[#00D4FF] hover:bg-[#00D4FF]/80 text-black font-bold px-8"

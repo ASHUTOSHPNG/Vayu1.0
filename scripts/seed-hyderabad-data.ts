@@ -66,7 +66,7 @@ async function seed() {
     ];
 
     const { data: insertedLocations, error: locError } = await supabase
-        .from('locations')
+        .from('wards')
         .insert(locations)
         .select();
 

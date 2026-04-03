@@ -97,7 +97,7 @@ export function CityHeatMap() {
         queryKey: ['locations', adminContext, selectedCityId],
         queryFn: async () => {
             if (!adminContext) return [];
-            let query = supabase.from('locations').select('*');
+            let query = supabase.from('wards').select('*');
             query = applyCityFilter(query, adminContext, selectedCityId, true);
             const { data, error } = await query;
             if (error) throw error;

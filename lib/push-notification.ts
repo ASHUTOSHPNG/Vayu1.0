@@ -1,5 +1,4 @@
 'use client';
-
 import { createClient } from '@/lib/supabase/client';
 
 export async function registerServiceWorker() {
@@ -35,16 +34,16 @@ export async function subscribeUser() {
         });
 
         const supabase = createClient();
-        const { error } = await supabase.from('push_subscriptions').upsert({
+        const { error } = await (supabase as any).from('push_subscriptions').upsert({
             endpoint: subscription.endpoint,
             p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey('p256dh')!) as any)),
             auth: btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey('auth')!) as any)),
-            threshold_aqi: 100 // Default
+            threshold_aqi: 100
         });
 
         if (error) {
             console.error('Error saving subscription to database:', error);
-            return subscription; // Still return subscription if it was successful locally
+            return subscription;
         }
 
         console.log('User subscribed to push notifications successfully');

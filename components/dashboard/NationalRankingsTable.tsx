@@ -1,5 +1,4 @@
 "use client";
-
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
@@ -14,8 +13,8 @@ export function NationalRankingsTable() {
     const { data: cityData, isLoading } = useQuery({
         queryKey: ['national-aqi-data'],
         queryFn: async () => {
-            const { data: locations, error } = await supabase
-                .from('locations')
+            const { data: locations, error } = await (supabase as any)
+                .from('wards')
                 .select(`
                     id,
                     name,
@@ -39,9 +38,18 @@ export function NationalRankingsTable() {
 
             if (error) throw error;
 
-            const cityMap: Record<string, any> = {};
+            const locList = (locations ?? []) as Array<{
+                id: string;
+                name: string;
+                city: string;
+                state: string | null;
+                latitude: number;
+                longitude: number;
+                aqi_readings: Array<{ aqi_value: number; pm25: number | null; pm10: number | null; recorded_at: string }>;
+            }>;
 
-            locations.forEach(loc => {
+            const cityMap: Record<string, any> = {};
+            locList.forEach(loc => {
                 const city = loc.city;
                 if (!cityMap[city]) {
                     cityMap[city] = {
@@ -55,13 +63,11 @@ export function NationalRankingsTable() {
                         pollutants: { pm25: 0, pm10: 0, no2: 0, so2: 0, co: 0, o3: 0 }
                     };
                 }
-
-                const readings = (loc as any).aqi_readings || [];
-                readings.forEach((r: any) => {
+                const readings = loc.aqi_readings || [];
+                readings.forEach((r) => {
                     cityMap[city].aqi += r.aqi_value;
                     cityMap[city].readingsCount += 1;
                     if (r.aqi_value > 300) cityMap[city].anomalies += 1;
-
                     if (r.pm25) cityMap[city].pollutants.pm25 += r.pm25;
                     if (r.pm10) cityMap[city].pollutants.pm10 += r.pm10;
                 });
@@ -70,7 +76,6 @@ export function NationalRankingsTable() {
             return Object.values(cityMap).map((city: any) => {
                 const avgAqi = city.readingsCount > 0 ? Math.round(city.aqi / city.readingsCount) : 0;
                 const topPollutant = city.pollutants.pm25 > city.pollutants.pm10 ? 'PM2.5' : 'PM10';
-
                 return {
                     name: city.name,
                     lat: city.lat,

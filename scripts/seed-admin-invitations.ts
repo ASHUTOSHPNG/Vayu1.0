@@ -78,7 +78,7 @@ async function seed() {
     for (const city of cities) {
         // Try to find matching city in locations table
         const { data: locations, error: locError } = await supabase
-            .from('locations')
+            .from('wards')
             .select('id, name')
             .or(`name.ilike.%${city.name}%,city.ilike.%${city.name}%`)
             .limit(1);

@@ -1,5 +1,4 @@
 "use client";
-
 import { useState } from 'react';
 import { useAdminContext } from '@/lib/admin/useAdminContext';
 import { createClient } from '@/lib/supabase/client';
@@ -29,9 +28,9 @@ export default function SettingsPage() {
     const supabase = createClient();
 
     // Notification states
-    const [emailAlerts, setEmailAlerts] = useState(profile?.notification_settings?.email_alerts ?? true);
-    const [dailySummary, setDailySummary] = useState(profile?.notification_settings?.daily_summary ?? false);
-    const [threshold, setThreshold] = useState(profile?.notification_settings?.anomaly_threshold ?? 150);
+    const [emailAlerts, setEmailAlerts] = useState((profile?.notification_settings as any)?.email_alerts ?? true);
+    const [dailySummary, setDailySummary] = useState((profile?.notification_settings as any)?.daily_summary ?? false);
+    const [threshold, setThreshold] = useState((profile?.notification_settings as any)?.anomaly_threshold ?? 150);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
 
     // Password states
@@ -54,9 +53,8 @@ export default function SettingsPage() {
                         daily_summary: dailySummary,
                         anomaly_threshold: threshold
                     }
-                })
+                } as any)
                 .eq('id', profile.id);
-
             if (error) throw error;
             toast.success("Notification preferences updated");
         } catch (error) {
@@ -166,7 +164,10 @@ export default function SettingsPage() {
                             <Label className="text-gray-500 text-xs uppercase tracking-widest font-bold">Account Timeline</Label>
                             <div className="flex flex-col gap-1 mt-1">
                                 <span className="text-gray-400 text-xs flex items-center gap-1">
-                                    <Clock className="h-3 w-3" /> Last login: {profile.last_login_at ? format(new Date(profile.last_login_at), 'PPP pp') : 'Never'}
+                                    <Clock className="h-3 w-3" /> Last login:{' '}
+                                    {(profile as any).last_login_at
+                                        ? format(new Date((profile as any).last_login_at), 'PPP pp')
+                                        : 'Never'}
                                 </span>
                             </div>
                         </div>
@@ -278,9 +279,7 @@ export default function SettingsPage() {
                             Change Password
                         </Button>
                     </form>
-
                     <Separator className="bg-[#1e2a3b]" />
-
                     <div>
                         <Label className="text-white text-base">Session Management</Label>
                         <p className="text-gray-400 text-xs mt-1 mb-4">You can force a sign-out on all active devices for security.</p>
@@ -315,7 +314,6 @@ export default function SettingsPage() {
                                 <p className="text-emerald-500 text-lg font-bold mt-1">Optimal</p>
                             </div>
                         </div>
-
                         <div className="space-y-4">
                             <div>
                                 <Label className="text-white text-base">Manual Data Synchronization</Label>

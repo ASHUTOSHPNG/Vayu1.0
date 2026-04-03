@@ -68,7 +68,7 @@ const additionalCities = [
 async function seed() {
     console.log('Cleaning up existing city data...');
     const { error: deleteError } = await supabase
-        .from('locations')
+        .from('wards')
         .delete()
         .eq('type', 'city');
 
@@ -79,7 +79,7 @@ async function seed() {
     console.log(`Seeding ${additionalCities.length} additional Indian cities...`);
 
     const { data: insertedLocations, error: locError } = await supabase
-        .from('locations')
+        .from('wards')
         .insert(additionalCities)
         .select();
 
