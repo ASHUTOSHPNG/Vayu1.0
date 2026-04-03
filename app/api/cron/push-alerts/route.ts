@@ -29,10 +29,10 @@ export async function GET(request: NextRequest) {
 
     webpush.setVapidDetails("mailto:admin@vayu.app", publicKey, privateKey);
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     // 1. Fetch critical AQI alerts (AQI > 200)
-    const { data: alerts, error: alertError } = await supabase
+    const { data: alerts, error: alertError } = await (supabase as any)
       .from("aqi_readings")
       .select("*, locations!inner(id, name, city)")
       .gte("aqi_value", 200)
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Fetch all active push subscriptions
-    const { data: subscriptions, error: subError } = await supabase
+    const { data: subscriptions, error: subError } = (await supabase as any)
       .from("push_subscriptions")
       .select("*");
 
@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
           if (error.statusCode === 410 || error.statusCode === 404) {
             failedEndpoints.push(sub.endpoint);
             try {
-              await supabase
+              await (supabase as any)
                 .from("push_subscriptions")
                 .delete()
                 .eq("endpoint", sub.endpoint);

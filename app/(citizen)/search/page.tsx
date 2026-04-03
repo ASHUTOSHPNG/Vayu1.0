@@ -722,10 +722,11 @@ export default function SearchPage() {
                       {liveSelectedWard.state}, {liveSelectedWard.country}
                     </span>
                     <span className="text-zinc-600">•</span>
-                    <span className="text-xs font-mono bg-white/5 px-2 py-0.5 rounded">
-                      {liveSelectedWard.lat.toFixed(4)},{" "}
-                      {liveSelectedWard.lng.toFixed(4)}
-                    </span>
+                    {(liveSelectedWard.ward || liveSelectedWard.city) && (
+                      <span className="text-xs bg-white/5 px-2 py-0.5 rounded">
+                        {liveSelectedWard.ward || liveSelectedWard.city}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

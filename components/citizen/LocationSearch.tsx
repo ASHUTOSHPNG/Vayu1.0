@@ -1,13 +1,9 @@
 "use client";
-
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { MapPin, Crosshair, Loader2, X } from "lucide-react";
-import {
-  resolveUserLocation,
-  searchLocations,
-} from "@/lib/api-clients/geocoding";
 import { LocationSuggestion } from "@/types/geocoding";
+import { LocationInfo } from "@/types/geocoding";
 
 interface LocationSearchProps {
   onSelect?: (location: {
@@ -22,33 +18,28 @@ interface LocationSearchProps {
 
 export const LocationSearch: React.FC<LocationSearchProps> = ({ onSelect }) => {
   const [value, setValue] = React.useState("");
-  const [suggestions, setSuggestions] = React.useState<LocationSuggestion[]>(
-    [],
-  );
+  const [suggestions, setSuggestions] = React.useState<LocationSuggestion[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
   const [isResolvingLocation, setIsResolvingLocation] = React.useState(false);
   const [showSuggestions, setShowSuggestions] = React.useState(false);
-  const searchTimeoutRef = React.useRef<NodeJS.Timeout>();
+  const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const handleSearchInput = async (query: string) => {
     setValue(query);
-
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
-
     if (query.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
-
     setIsSearching(true);
     setShowSuggestions(true);
-
     searchTimeoutRef.current = setTimeout(async () => {
       try {
-        const results = await searchLocations(query);
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+        const results: LocationSuggestion[] = await res.json();
         setSuggestions(results);
       } catch (error) {
         console.error("Search failed:", error);
@@ -77,32 +68,37 @@ export const LocationSearch: React.FC<LocationSearchProps> = ({ onSelect }) => {
 
   const handleUseCurrentLocation = async () => {
     if (!onSelect || isResolvingLocation) return;
-
     setIsResolvingLocation(true);
     try {
-      const { locationInfo } = await resolveUserLocation();
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          timeout: 10000,
+          maximumAge: 300000,
+          enableHighAccuracy: false,
+        });
+      });
 
-      // Extract city, handling case where city might equal ward (ward level detail)
+      const { latitude: lat, longitude: lon } = position.coords;
+      const res = await fetch(`/api/geocode?lat=${lat}&lon=${lon}`);
+      const locationInfo: LocationInfo = await res.json();
+
       let city = locationInfo.city;
       if (city === locationInfo.ward && locationInfo.state) {
-        // If city equals ward, use state or try to extract from display_name
-        const parts = locationInfo.display_name.split(",").map((p) => p.trim());
-        // Try to find a part that's different from the ward (likely the city)
-        city =
-          parts.find(
-            (p) => p !== locationInfo.ward && p !== locationInfo.state,
-          ) || locationInfo.city;
+        const parts = locationInfo.display_name.split(",").map((p: string) => p.trim());
+        city = parts.find(
+          (p) => p !== locationInfo.ward && p !== locationInfo.state,
+        ) || locationInfo.city;
       }
 
       onSelect({
-        name:
-          locationInfo.ward || locationInfo.city || locationInfo.display_name,
+        name: locationInfo.ward || locationInfo.city || locationInfo.display_name,
         ward: locationInfo.ward,
         city: city,
         postcode: locationInfo.postcode,
         lat: locationInfo.lat,
         lon: locationInfo.lon,
       });
+
       setValue("");
       setSuggestions([]);
       setShowSuggestions(false);
@@ -145,8 +141,6 @@ export const LocationSearch: React.FC<LocationSearchProps> = ({ onSelect }) => {
             <X className="h-5 w-5" />
           </button>
         )}
-
-        {/* Search Results Dropdown */}
         {showSuggestions && value.length >= 2 && (
           <div className="absolute top-full left-0 right-0 mt-2 max-h-96 overflow-y-auto rounded-xl border border-teal-300/35 bg-slate-900/95 backdrop-blur-xl shadow-lg z-50">
             {isSearching && (
@@ -162,25 +156,20 @@ export const LocationSearch: React.FC<LocationSearchProps> = ({ onSelect }) => {
                 ))}
               </div>
             )}
-
             {!isSearching && suggestions.length === 0 && (
               <div className="p-6 text-center">
                 <MapPin className="h-8 w-8 text-zinc-600 mx-auto mb-2 opacity-50" />
-                <p className="text-zinc-400 text-sm font-medium">
-                  No areas found
-                </p>
+                <p className="text-zinc-400 text-sm font-medium">No areas found</p>
                 <p className="text-zinc-500 text-xs mt-1">
                   Try searching by city name, ward, or area
                 </p>
               </div>
             )}
-
             {!isSearching && suggestions.length > 0 && (
               <>
                 <div className="sticky top-0 px-4 py-2 border-b border-teal-300/20 bg-slate-900/80 backdrop-blur-sm">
                   <p className="text-xs text-zinc-400">
-                    {suggestions.length} result
-                    {suggestions.length > 1 ? "s" : ""} found
+                    {suggestions.length} result{suggestions.length > 1 ? "s" : ""} found
                   </p>
                 </div>
                 <div className="divide-y divide-teal-300/20">
@@ -229,7 +218,6 @@ export const LocationSearch: React.FC<LocationSearchProps> = ({ onSelect }) => {
           </div>
         )}
       </div>
-
       <button
         type="button"
         onClick={handleUseCurrentLocation}

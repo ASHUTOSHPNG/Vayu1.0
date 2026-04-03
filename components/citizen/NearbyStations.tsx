@@ -36,7 +36,7 @@ export const NearbyStations: React.FC<NearbyStationsProps> = ({ stations, onSele
                                 </div>
                                 <div>
                                     <p className="text-sm font-bold text-white">{station.name}</p>
-                                    <p className="text-xs text-zinc-500">{station.distance} km away</p>
+                                    <p className="text-xs text-zinc-500">{typeof station.distance === 'number' ? station.distance.toFixed(1) : station.distance} km away</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-4">
