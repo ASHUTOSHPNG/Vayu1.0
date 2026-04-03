@@ -19,7 +19,7 @@ async function testQuery() {
     console.log('Testing "latest reading per location" query...');
 
     const { data: locations, error } = await supabase
-        .from('locations')
+        .from('wards')
         .select('name, city, aqi_readings(aqi_value, recorded_at)')
         .order('recorded_at', { foreignTable: 'aqi_readings', ascending: false })
         .limit(1, { foreignTable: 'aqi_readings' })

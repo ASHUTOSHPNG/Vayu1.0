@@ -4,29 +4,30 @@ import { NextResponse } from 'next/server';
 export async function POST(request: Request) {
     try {
         const { invite_code } = await request.json();
-        
-        console.log('📩 Received invite_code:', invite_code); // ADD THIS
 
         if (!invite_code) {
             return NextResponse.json({ error: 'invite_code_required' }, { status: 400 });
         }
 
         const supabase = await createAdminClient();
+        const normalizedCode = invite_code.trim().toUpperCase();
+        console.log('Looking for code:', normalizedCode);
 
-        console.log('URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
-        console.log('KEY exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-        
         const { data: invitation, error } = await supabase
             .from('admin_invitations')
             .select('*')
-            .eq('invite_code', invite_code.trim().toUpperCase())
+            .eq('invite_code', normalizedCode)
             .is('used_by', null)
             .gt('expires_at', new Date().toISOString())
-            .single();
+            .maybeSingle();
+        console.log('Result:', { invitation, error });
 
-        console.log('🔍 Query result:', { invitation, error }); // ADD THIS
+        if (error) {
+            console.error('DB error:', error);
+            return NextResponse.json({ error: 'db_error' }, { status: 500 });
+        }
 
-        if (error || !invitation) {
+        if (!invitation) {
             return NextResponse.json({ error: 'invalid_invite' }, { status: 404 });
         }
 

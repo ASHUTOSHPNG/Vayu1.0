@@ -80,7 +80,7 @@ export function AdminNav() {
                     </div>
                 </div>
                 <span className="text-xl font-bold tracking-wider font-sans bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
-                    AIRSENSE
+                    Vayu
                 </span>
             </div>
 

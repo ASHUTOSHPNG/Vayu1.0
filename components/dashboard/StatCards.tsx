@@ -1,5 +1,4 @@
 "use client";
-
 import { useQuery } from '@tanstack/react-query';
 import CountUp from 'react-countup';
 import { Activity, AlertTriangle, ArrowUpRight, ArrowDownRight, ShieldAlert, Building2 } from 'lucide-react';
@@ -8,7 +7,6 @@ import { getAQIColor } from '@/lib/utils/aqi';
 import { createClient } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/useAdminContext';
 import { useAdminStore } from '@/store/adminStore';
-import { applyCityFilter } from '@/lib/admin/queryHelpers';
 
 export function StatCards() {
     const supabase = createClient();
@@ -20,47 +18,37 @@ export function StatCards() {
         queryFn: async () => {
             if (!adminContext) return null;
 
-            // 1. Fetch Policy Actions count with filter
-            let policyQuery = supabase
-                .from('policy_recommendations')
-                .select('*, locations!inner(city)', { count: 'exact', head: true })
+            // 1. Fetch Policy Actions count
+            const { count: policiesCount } = await supabase
+                .from('policy_actions')
+                .select('*', { count: 'exact', head: true })
                 .eq('status', 'pending');
 
-            policyQuery = applyCityFilter(policyQuery, adminContext, selectedCityId);
-            const { count: policiesCount } = await policyQuery;
-
-            // 2. Fetch Active Anomalies (AQI > 300 as proxy for critical anomalies)
-            let anomalyQuery = supabase
+            // 2. Fetch Active Anomalies (AQI > 300)
+            const { data: recentAnomalies } = await supabase
                 .from('aqi_readings')
-                .select('id, locations!inner(city)')
-                .gte('recorded_at', new Date(Date.now() - 3600000).toISOString())
+                .select('id')
                 .gte('aqi_value', 300);
-
-            anomalyQuery = applyCityFilter(anomalyQuery, adminContext, selectedCityId);
-            const { data: recentAnomalies } = await anomalyQuery;
             const activeAnomalies = recentAnomalies?.length || 0;
 
-            // 3. Average AQI for current scope
-            let aqiQuery = supabase
+            // 3. Average AQI
+            const { data: aqiData } = await supabase
                 .from('aqi_readings')
-                .select('aqi_value, locations!inner(city)')
+                .select('aqi_value')
                 .order('recorded_at', { ascending: false })
                 .limit(50);
-
-            aqiQuery = applyCityFilter(aqiQuery, adminContext, selectedCityId);
-            const { data: aqiData } = await aqiQuery;
             const avgAqi = aqiData?.length
                 ? Math.round(aqiData.reduce((acc, curr) => acc + curr.aqi_value, 0) / aqiData.length)
                 : 180;
 
-            // 4. Cities Monitored (Super Admin ONLY)
+            // 4. Cities Monitored (Central Admin ONLY)
             let citiesCount = 0;
-            if (isCentralAdmin && !selectedCityId) {
-                const { data: locations } = await supabase
-                    .from('locations')
-                    .select('city');
 
-                const uniqueCities = new Set(locations?.map(l => l.city));
+            if (isCentralAdmin && !selectedCityId) {
+                const { data: wardsData } = await (supabase as any)
+                    .from('wards')
+                    .select('city');
+                const uniqueCities = new Set(wardsData?.map((w: any) => w.city).filter(Boolean));
                 citiesCount = uniqueCities.size;
             }
 
@@ -74,6 +62,8 @@ export function StatCards() {
             };
         },
         enabled: !!adminContext,
+        refetchInterval: 30000,
+        refetchOnWindowFocus: true,
     });
 
     if (isLoading || !stats) {
@@ -91,7 +81,6 @@ export function StatCards() {
 
     return (
         <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-${isNationalView ? '4' : '3'} gap-6 mb-6`}>
-
             {/* 1. City/National AQI Card */}
             <Card className="bg-[#132238] border-[#1e2a3b] overflow-hidden relative group">
                 <div className={`absolute top-0 left-0 w-1 h-full ${aqiColorClass} opacity-50 group-hover:opacity-100 transition-opacity`} />
@@ -111,7 +100,7 @@ export function StatCards() {
                                 </span>
                             </div>
                         </div>
-                        <div className={`p-3 rounded-xl bg-[#0A1628] border border-[#1e2a3b]`}>
+                        <div className="p-3 rounded-xl bg-[#0A1628] border border-[#1e2a3b]">
                             <Activity className={`h-6 w-6 ${stats.aqiTrend === 'down' ? 'text-green-400' : 'text-red-400'}`} />
                         </div>
                     </div>
@@ -130,7 +119,7 @@ export function StatCards() {
                                     <CountUp end={stats.anomalies} duration={2} />
                                 </h3>
                             </div>
-                            <p className="text-xs text-orange-400 mt-1 font-medium">Critical readings in last hour</p>
+                            <p className="text-xs text-orange-400 mt-1 font-medium">Critical readings detected</p>
                         </div>
                         <div className="p-3 rounded-xl bg-[#0A1628] border border-[#1e2a3b]">
                             <AlertTriangle className="h-6 w-6 text-orange-500" />
@@ -182,7 +171,6 @@ export function StatCards() {
                     </CardContent>
                 </Card>
             )}
-
         </div>
     );
 }

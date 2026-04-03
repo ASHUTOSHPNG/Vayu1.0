@@ -1,5 +1,4 @@
 "use client";
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,7 +20,7 @@ export function LatestPolicy() {
         queryFn: async () => {
             if (!adminContext) return null;
 
-            let query = supabase
+            let query = (supabase as any)
                 .from('policy_recommendations')
                 .select(`
                     id,
@@ -35,9 +34,7 @@ export function LatestPolicy() {
                 .order('created_at', { ascending: false });
 
             query = applyCityFilter(query, adminContext, selectedCityId);
-
             const { data, error } = await query.limit(1).maybeSingle();
-
             if (error) throw error;
             return data as any;
         },
@@ -47,9 +44,9 @@ export function LatestPolicy() {
 
     const updateStatus = useMutation({
         mutationFn: async ({ id, status }: { id: string, status: 'actioned' | 'dismissed' }) => {
-            const { error } = await supabase
+            const { error } = await (supabase as any)
                 .from('policy_recommendations')
-                .update({ status: status as any })
+                .update({ status })
                 .eq('id', id);
             if (error) throw error;
         },
@@ -61,16 +58,13 @@ export function LatestPolicy() {
 
     return (
         <Card className="bg-[#00D4FF]/10 border-[#00D4FF]/30 shadow-[0_0_15px_rgba(0,212,255,0.1)] flex flex-col h-full relative overflow-hidden group">
-            {/* Glow effects */}
             <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#00D4FF] rounded-full blur-[100px] opacity-20 pointer-events-none" />
-
             <CardHeader className="p-4 border-b border-[#00D4FF]/20 relative z-10">
                 <CardTitle className="text-sm font-bold text-[#00D4FF] flex items-center uppercase tracking-wider">
                     <ShieldAlert className="h-4 w-4 mr-2" />
                     {isCentralAdmin && !selectedCityId ? 'National Policy Alerts' : 'Local Policy Action Required'}
                 </CardTitle>
             </CardHeader>
-
             <CardContent className="p-5 flex-1 relative z-10 flex flex-col">
                 {isLoading ? (
                     <div className="space-y-3 animate-pulse">
@@ -95,13 +89,11 @@ export function LatestPolicy() {
                                 CRITICAL
                             </Badge>
                         </div>
-
                         <p className="text-sm text-gray-400 line-clamp-3 mb-4 leading-relaxed flex-1">
                             {typeof policy.recommendation_text === 'string'
                                 ? JSON.parse(policy.recommendation_text).immediateActions[0]
                                 : (policy.recommendation_text as any)?.immediateActions?.[0] || 'Deploy targeted water sprinkling and halt heavy construction.'}
                         </p>
-
                         <div className="flex items-center text-xs text-gray-500 font-medium overflow-hidden">
                             <FileText className="h-3.5 w-3.5 mr-1 shrink-0" />
                             <span className="truncate">For: <span className="text-white ml-1">{(policy.locations as any)?.name || 'Unknown Region'}</span></span>
@@ -111,7 +103,6 @@ export function LatestPolicy() {
                     </div>
                 )}
             </CardContent>
-
             {policy && (
                 <CardFooter className="p-4 pt-0 border-t border-[#00D4FF]/20 relative z-10 mt-auto flex gap-3">
                     <Button

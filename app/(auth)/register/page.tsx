@@ -114,16 +114,21 @@ export default function RegisterPage() {
                         invite_code: inviteCode.trim().toUpperCase()
                     }),
                 });
-
                 if (!completeRes.ok) {
                     setError("Account created but profile linking failed. Please contact your administrator.");
                     setLoading(false);
-                    return;
+                return;
                 }
 
-                toast.success("Admin account created successfully!");
-                router.refresh();
-                router.push('/dashboard');
+                const completeData = await completeRes.json();
+
+                if (!completeData.email_confirmed) {
+                    toast.success("Account created! Check your email to confirm before logging in.");
+                    router.push('/login?message=confirm_email');
+                    } else {
+    toast.success("Admin account created successfully!");
+    router.push('/dashboard');
+                }   
             }
         } catch (err) {
             console.error('Registration error:', err);

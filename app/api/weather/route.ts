@@ -8,10 +8,11 @@ export async function GET(request: NextRequest) {
     if (isRateLimited(ip)) {
         return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
     }
+
     const searchParams = request.nextUrl.searchParams;
     const latParam = searchParams.get("lat");
     const lonParam = searchParams.get("lon");
-    const type = searchParams.get("type"); // 'current' or 'forecast'
+    const type = searchParams.get("type");
     const hoursParam = searchParams.get("hours") || "72";
 
     if (!latParam || !lonParam || !type) {
@@ -40,33 +41,26 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = await createClient();
-
-    // Create a unique cache key based on params
-    // To avoid float precision issues, round lat/lon for caching to 3 decimal places (~110m resolution)
     const cacheKey = `weather_${type}_${lat.toFixed(3)}_${lon.toFixed(3)}${type === "forecast" ? `_${hours}` : ""}`;
 
     try {
-        // 1. Check Supabase cache (weather_cache table)
-        // Note: If the table doesn't exist yet, this will throw an error and we'll fall back to fetching.
-        // Ensure the table expects: key (text, PK), data (jsonb), updated_at (timestamptz)
-        const { data: cachedData, error: cacheError } = await supabase
+        // 1. Check Supabase cache — weather_cache doesn't exist in schema, cast to any
+        const { data: cachedData, error: cacheError } = await (supabase as any)
             .from("weather_cache")
             .select("data, updated_at")
             .eq("key", cacheKey)
             .single();
 
         if (!cacheError && cachedData) {
-            // Check if cache is less than 15 minutes old
-            const cacheTimestamp = new Date(cachedData.updated_at).getTime();
+            const cacheTimestamp = new Date((cachedData as any).updated_at).getTime();
             const now = Date.now();
             const fifteenMinutesMs = 15 * 60 * 1000;
-
             if (now - cacheTimestamp < fifteenMinutesMs) {
-                return NextResponse.json(cachedData.data);
+                return NextResponse.json((cachedData as any).data);
             }
         }
 
-        // 2. Fetch fresh data if not cached or expired
+        // 2. Fetch fresh data
         let freshData;
         if (type === "current") {
             freshData = await fetchCurrentWeather(lat, lon);
@@ -74,13 +68,12 @@ export async function GET(request: NextRequest) {
             freshData = await fetchWeatherForecast(lat, lon, hours);
         }
 
-        // 3. Update cache in Supabase asynchronously (don't block response)
-        // We use an upsert function. If table doesn't exist, this will just fail silently in the background
+        // 3. Update cache asynchronously
         (async () => {
             try {
-                await supabase.from("weather_cache").upsert({
+                await (supabase as any).from("weather_cache").upsert({
                     key: cacheKey,
-                    data: freshData as any, // Cast as any or Json to satisfy Supabase type
+                    data: freshData,
                     updated_at: new Date().toISOString()
                 });
             } catch (e) {

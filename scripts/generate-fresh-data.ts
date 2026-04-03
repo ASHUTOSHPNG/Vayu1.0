@@ -17,7 +17,7 @@ const supabase = createClient(supabaseUrl!, supabaseKey!);
 
 async function refreshData() {
     console.log('Fetching all locations...');
-    const { data: locations, error: locError } = await supabase.from('locations').select('id, city');
+    const { data: locations, error: locError } = await supabase.from('wards').select('id, city');
 
     if (locError) {
         console.error('Error fetching locations:', locError);

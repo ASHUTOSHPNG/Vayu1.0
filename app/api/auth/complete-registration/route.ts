@@ -11,30 +11,43 @@ export async function POST(request: Request) {
 
         const supabase = await createAdminClient();
 
-        // Double check invitation is still valid and unused
+        // Verify user exists in Supabase Auth
+        const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(user_id);
+
+        if (userError || !user) {
+            return NextResponse.json({ error: 'user_not_found' }, { status: 404 });
+        }
+
+        const emailConfirmed = !!user.email_confirmed_at;
+
         const { data: invitation, error: inviteError } = await supabase
             .from('admin_invitations')
             .select('*')
             .eq('invite_code', invite_code.trim().toUpperCase())
             .is('used_by', null)
             .gt('expires_at', new Date().toISOString())
-            .single();
+            .maybeSingle();
 
-        if (inviteError || !invitation) {
+        if (inviteError) {
+            console.error('Invite fetch error:', inviteError);
+            return NextResponse.json({ error: 'db_error' }, { status: 500 });
+        }
+
+        if (!invitation) {
             return NextResponse.json({ error: 'invalid_invite' }, { status: 400 });
         }
 
-        // Upsert profile
+        // Only activate profile if email is confirmed
         const { error: profileError } = await supabase
             .from('user_profiles')
             .upsert({
                 id: user_id,
-                full_name: full_name,
+                full_name,
                 role: 'admin',
                 admin_type: invitation.admin_type,
                 assigned_city_id: invitation.assigned_city_id,
                 assigned_city_name: invitation.assigned_city_name,
-                is_active: true
+                is_active: emailConfirmed
             });
 
         if (profileError) {
@@ -42,20 +55,27 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'profile_creation_failed' }, { status: 500 });
         }
 
-        // Update invitation
-        const { error: updateError } = await supabase
-            .from('admin_invitations')
-            .update({
-                used_by: user_id,
-            })
-            .eq('id', invitation.id);
+        // Only burn the invite after email is confirmed, and record used_at
+        if (emailConfirmed) {
+            const { error: updateError } = await supabase
+                .from('admin_invitations')
+                .update({
+                    used_by: user_id,
+                    used_at: new Date().toISOString(),
+                })
+                .eq('id', invitation.id);
 
-        if (updateError) {
-            console.error('Invitation update error:', updateError);
-            return NextResponse.json({ error: 'invitation_update_failed' }, { status: 500 });
+            if (updateError) {
+                console.error('Invitation update error:', updateError);
+                return NextResponse.json({ error: 'invitation_update_failed' }, { status: 500 });
+            }
         }
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({
+            success: true,
+            email_confirmed: emailConfirmed
+        });
+
     } catch (err) {
         console.error('Complete registration error:', err);
         return NextResponse.json({ error: 'internal_error' }, { status: 500 });

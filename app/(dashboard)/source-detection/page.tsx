@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useMemo } from 'react';
 import { PollutionSourceCard, PollutionSourceData } from '@/components/dashboard/PollutionSourceCard';
 import { Input } from '@/components/ui/input';
@@ -12,6 +11,13 @@ import { useAdminStore } from '@/store/adminStore';
 import { createClient } from '@/lib/supabase/client';
 import { applyCityFilter } from '@/lib/admin/queryHelpers';
 import { Badge } from '@/components/ui/badge';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from '@/components/ui/select';
 
 const SOURCE_COLORS: Record<string, string> = {
     'traffic': '#00D4FF',
@@ -33,54 +39,54 @@ export default function SourceDetectionPage() {
     const supabase = createClient();
     const { adminContext, cityName, isCentralAdmin } = useAdminContext();
     const { selectedCityId } = useAdminStore();
-
     const activeCityName = selectedCityId || cityName || (isCentralAdmin ? 'All Cities' : null);
-
-
     const [searchTerm, setSearchTerm] = useState('');
     const [filterSource, setFilterSource] = useState('all');
 
-    // Fetch real detection data
     const { data: sourceData, isLoading } = useQuery({
         queryKey: ['source-apportionment', adminContext, selectedCityId],
         queryFn: async () => {
             if (!adminContext) return [];
 
-            // 1. Get locations
-            let locQuery = supabase.from('locations').select('id, name, latitude, longitude');
+            // 1. Get locations — doesn't exist in schema, cast to any
+            let locQuery = (supabase as any).from('wards').select('id, name, latitude, longitude');
             locQuery = applyCityFilter(locQuery, adminContext, selectedCityId, true);
-
-            const { data: locations, error: locError } = await locQuery;
+            const { data: locationsRaw, error: locError } = await locQuery;
             if (locError) throw locError;
-            if (!locations.length) return [];
 
+            const locations = (locationsRaw ?? []) as Array<{
+                id: string;
+                name: string;
+                latitude: number;
+                longitude: number;
+            }>;
+
+            if (!locations.length) return [];
             const locationIds = locations.map(l => l.id);
 
-            // 2. Get recent detections (last 7 days for distribution)
+            // 2. Get recent detections — pollution_sources doesn't exist in schema
             const sevenDaysAgo = new Date();
             sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-            const { data: detections, error: detError } = await supabase
+            const { data: detections, error: detError } = await (supabase as any)
                 .from('pollution_sources')
                 .select('*')
                 .in('location_id', locationIds)
                 .gte('detected_at', sevenDaysAgo.toISOString());
-
             if (detError) throw detError;
 
             // 3. Get latest anomaly scores
             const { data: readings, error: readError } = await supabase
                 .from('aqi_readings')
-                .select('location_id, anomaly_score, recorded_at')
-                .in('location_id', locationIds)
+                .select('ward_id, anomaly_score, recorded_at')
+                .in('ward_id', locationIds)
                 .order('recorded_at', { ascending: false });
-
             if (readError) throw readError;
 
             const latestAnomaly: Record<string, number> = {};
             (readings as any[]).forEach(r => {
-                if (!latestAnomaly[r.location_id]) {
-                    latestAnomaly[r.location_id] = r.anomaly_score || 0;
+                if (!latestAnomaly[r.ward_id]) {
+                    latestAnomaly[r.ward_id] = r.anomaly_score || 0;
                 }
             });
 
@@ -89,7 +95,6 @@ export default function SourceDetectionPage() {
                 const locDetections = (detections as any[]).filter(d => d.location_id === loc.id);
                 const total = locDetections.length || 1;
 
-                // Aggregate by type
                 const counts: Record<string, number> = {};
                 locDetections.forEach(d => {
                     counts[d.source_type] = (counts[d.source_type] || 0) + 1;
@@ -101,7 +106,6 @@ export default function SourceDetectionPage() {
                     color: SOURCE_COLORS[type] || SOURCE_COLORS.unknown
                 })).sort((a, b) => b.percentage - a.percentage);
 
-                // If no data, add unknown
                 if (sources.length === 0) {
                     sources.push({ type: 'Stationary', percentage: 100, color: '#4b5563' });
                 }
@@ -115,7 +119,6 @@ export default function SourceDetectionPage() {
                     lastDetected: locDetections[0]?.detected_at || new Date().toISOString(),
                     sources
                 } as any;
-
             }).sort((a, b) => b.anomalyScore - a.anomalyScore);
         },
         enabled: !!adminContext
@@ -138,12 +141,9 @@ export default function SourceDetectionPage() {
             item.sources[0]?.type || 'N/A',
             item.sources.map((s: any) => `${s.type}:${s.percentage}%`).join(' | ')
         ]);
-
-
         const csvContent = "data:text/csv;charset=utf-8,"
             + headers.join(",") + "\n"
             + rows.map(e => e.join(",")).join("\n");
-
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
@@ -155,7 +155,6 @@ export default function SourceDetectionPage() {
 
     return (
         <div className="space-y-8">
-            {/* 1. Page Header */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -185,7 +184,6 @@ export default function SourceDetectionPage() {
                 </div>
             </div>
 
-            {/* 2. Tooltip/Explainer Card */}
             <Card className="bg-[#0A1628]/50 border-cyan-500/20 shadow-inner">
                 <CardContent className="p-4 flex items-center gap-4">
                     <div className="p-3 rounded-full bg-cyan-500/10 shrink-0">
@@ -200,7 +198,6 @@ export default function SourceDetectionPage() {
                 </CardContent>
             </Card>
 
-            {/* 3. Filters Bar */}
             <div className="flex flex-col md:flex-row gap-4 bg-[#132238] border border-[#1e2a3b] p-4 rounded-xl">
                 <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
@@ -211,7 +208,6 @@ export default function SourceDetectionPage() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase px-2">
                         <Filter className="h-3 w-3" /> Filter Dominant Source:
@@ -231,7 +227,6 @@ export default function SourceDetectionPage() {
                 </div>
             </div>
 
-            {/* 4. Results Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {isLoading ? (
                     Array(6).fill(0).map((_, i) => (
@@ -251,12 +246,3 @@ export default function SourceDetectionPage() {
         </div>
     );
 }
-
-// Support components (shadcn/ui placeholders if needed)
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue
-} from '@/components/ui/select';

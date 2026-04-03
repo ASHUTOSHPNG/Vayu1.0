@@ -1,13 +1,11 @@
-
 "use client";
-
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/client';
 import { useAdminContext } from '@/lib/admin/useAdminContext';
 import { useAdminStore } from '@/store/adminStore';
 import { applyCityFilter } from '@/lib/admin/queryHelpers';
-import { Bell, AlertTriangle, Info, ShieldAlert, Clock, MapPin, Flame, Globe, TrendingUp, Filter } from 'lucide-react';
+import { Bell, AlertTriangle, ShieldAlert, Clock, MapPin, Flame, Globe, TrendingUp, Filter } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from "@/components/ui/progress";
 
@@ -16,14 +14,14 @@ export default function AlertsPage() {
     const { adminContext } = useAdminContext();
     const { selectedCityId } = useAdminStore();
 
-    // 1. Existing System Alerts
+    // 1. System Alerts — high AQI readings
     const { data: alerts, isLoading: alertsLoading } = useQuery({
         queryKey: ['system-alerts', adminContext, selectedCityId],
         queryFn: async () => {
             if (!adminContext) return [];
-            let query = supabase
+            let query = (supabase as any)
                 .from('aqi_readings')
-                .select('*, locations!inner(name, city)')
+                .select('*, wards!inner(name, city)')
                 .gte('aqi_value', 200)
                 .order('recorded_at', { ascending: false })
                 .limit(20);
@@ -35,36 +33,33 @@ export default function AlertsPage() {
         enabled: !!adminContext
     });
 
-    // 2. NEW: Fire Snapshots (National/Regional)
+    // 2. Fire Snapshots (cast to any — table may not exist yet)
     const { data: fireSnapshots, isLoading: fireSnapshotsLoading } = useQuery({
         queryKey: ['fire-snapshots'],
         queryFn: async () => {
-            const { data, error } = await supabase
+            const { data, error } = await (supabase as any)
                 .from('fire_snapshots')
                 .select('*')
                 .order('snapshot_date', { ascending: false })
                 .limit(4);
             if (error) throw error;
-            return data;
+            return data as any[];
         }
     });
 
-    // 3. NEW: Satellite Confirmed Fire Events in Cities
+    // 3. Satellite Fire Events
     const { data: fireEvents, isLoading: fireEventsLoading } = useQuery({
         queryKey: ['fire-events', adminContext, selectedCityId],
         queryFn: async () => {
-            let query = supabase
+            let query = (supabase as any)
                 .from('aqi_readings')
-                .select('*, locations!inner(name, city)')
+                .select('*, wards!inner(name, city)')
                 .not('fire_risk_data', 'is', null)
                 .order('recorded_at', { ascending: false })
                 .limit(10);
-
             query = applyCityFilter(query, adminContext as any, selectedCityId);
             const { data, error } = await query;
             if (error) throw error;
-
-            // Filter locally for Moderate/High/Critical
             return (data as any[]).filter(d =>
                 ['moderate', 'high', 'critical'].includes(d.fire_risk_data?.riskLevel)
             );
@@ -83,7 +78,7 @@ export default function AlertsPage() {
                 <p className="text-gray-400 mt-2">Real-time oversight of air quality anomalies, satellite fire events, and regional health data.</p>
             </div>
 
-            {/* 🔥 NASA FIRMS INTEGRATION PANEL */}
+            {/* NASA FIRMS PANEL */}
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
                     <h2 className="text-xl font-bold text-white flex items-center">
@@ -100,7 +95,7 @@ export default function AlertsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {fireSnapshotsLoading ? (
                         [1, 2, 3, 4].map(i => <div key={i} className="h-32 bg-[#132238] rounded-2xl animate-pulse" />)
-                    ) : fireSnapshots?.map((snap) => (
+                    ) : fireSnapshots?.map((snap: any) => (
                         <Card key={snap.id} className="bg-[#132238] border-[#1e2a3b] relative overflow-hidden group">
                             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
                                 <Globe className="h-12 w-12 text-white" />
@@ -123,7 +118,7 @@ export default function AlertsPage() {
                     ))}
                 </div>
 
-                {/* Fire Impact Table/List */}
+                {/* Fire Impact Table */}
                 <div className="bg-[#132238] rounded-3xl border border-[#1e2a3b] overflow-hidden">
                     <div className="p-6 border-b border-[#1e2a3b] flex justify-between items-center">
                         <h3 className="text-white font-bold flex items-center">
@@ -141,19 +136,16 @@ export default function AlertsPage() {
                             </div>
                         ) : (
                             <div className="divide-y divide-[#1e2a3b]">
-                                {fireEvents?.map((event) => (
+                                {fireEvents?.map((event: any) => (
                                     <div key={event.id} className="p-5 flex items-center justify-between hover:bg-[#1a2b45] transition-colors">
                                         <div className="flex items-center gap-4">
-                                            <div className={`p-3 rounded-2xl ${event.fire_risk_data?.riskLevel === 'critical' ? 'bg-red-500/10' : 'bg-orange-500/10'
-                                                }`}>
-                                                <Flame className={`h-6 w-6 ${event.fire_risk_data?.riskLevel === 'critical' ? 'text-red-500' : 'text-orange-500'
-                                                    }`} />
+                                            <div className={`p-3 rounded-2xl ${event.fire_risk_data?.riskLevel === 'critical' ? 'bg-red-500/10' : 'bg-orange-500/10'}`}>
+                                                <Flame className={`h-6 w-6 ${event.fire_risk_data?.riskLevel === 'critical' ? 'text-red-500' : 'text-orange-500'}`} />
                                             </div>
                                             <div>
                                                 <div className="flex items-center gap-2 mb-0.5">
-                                                    <h4 className="text-white font-bold">{event.locations.name}</h4>
-                                                    <Badge variant="outline" className={`${event.fire_risk_data?.riskLevel === 'critical' ? 'text-red-400 border-red-500/20' : 'text-orange-400 border-orange-500/20'
-                                                        } text-[9px] uppercase font-black`}>
+                                                    <h4 className="text-white font-bold">{event.wards?.name}</h4>
+                                                    <Badge variant="outline" className={`${event.fire_risk_data?.riskLevel === 'critical' ? 'text-red-400 border-red-500/20' : 'text-orange-400 border-orange-500/20'} text-[9px] uppercase font-black`}>
                                                         {event.fire_risk_data?.riskLevel} Risk
                                                     </Badge>
                                                 </div>
@@ -178,7 +170,7 @@ export default function AlertsPage() {
                 </div>
             </div>
 
-            {/* SYSTEM ALERTS PANEL (Existing) */}
+            {/* SYSTEM ALERTS PANEL */}
             <div className="space-y-4">
                 <h2 className="text-xl font-bold text-white flex items-center">
                     <ShieldAlert className="h-5 w-5 mr-2 text-[#00D4FF]" />
@@ -196,7 +188,7 @@ export default function AlertsPage() {
                             <p className="text-gray-500 text-sm">Industrial and traffic levels are currently within safe thresholds.</p>
                         </div>
                     ) : (
-                        alerts?.map((alert) => (
+                        alerts?.map((alert: any) => (
                             <Card key={alert.id} className="bg-[#132238] border-[#1e2a3b] hover:bg-[#1a2b45] transition-colors border-l-4 border-l-cyan-500 overflow-hidden">
                                 <CardContent className="p-5 flex items-center">
                                     <div className="p-3 bg-cyan-500/10 rounded-2xl border border-cyan-500/20 mr-5">
@@ -209,10 +201,10 @@ export default function AlertsPage() {
                                             </Badge>
                                         </div>
                                         <h4 className="text-white font-bold text-lg">
-                                            Elevated Pollution Spike Detected in {alert.locations.name}
+                                            Elevated Pollution Spike Detected in {alert.wards?.name}
                                         </h4>
                                         <div className="flex items-center text-xs text-gray-500 mt-2 gap-4">
-                                            <span className="flex items-center"><MapPin className="h-3 w-3 mr-1" /> {alert.locations.city}</span>
+                                            <span className="flex items-center"><MapPin className="h-3 w-3 mr-1" /> {alert.wards?.city}</span>
                                             <span className="flex items-center"><Clock className="h-3 w-3 mr-1" /> {new Date(alert.recorded_at).toLocaleString()}</span>
                                             <span className="flex items-center text-cyan-400 font-bold">AQI: {Math.round(alert.aqi_value)}</span>
                                         </div>

@@ -70,7 +70,7 @@ async function seed() {
     locations[0].longitude = 80.2578;
 
     const { data: insertedLocations, error: locError } = await supabase
-        .from('locations')
+        .from('wards')
         .insert(locations)
         .select();
 

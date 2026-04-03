@@ -28,17 +28,13 @@ import {
   Flame,
   MapPin,
   Sparkles,
-  X,
 } from "lucide-react";
 import { getAQIDisplay } from "@/lib/aqi-utils";
 import { useAQISubscription } from "@/lib/realtime/useAQISubscription";
 import { useAQIStore } from "@/store/aqiStore";
 import { createClient } from "@/lib/supabase/client";
 import { FireRiskAssessment, degreesToCardinal } from "@/lib/api-clients/firms";
-import {
-  searchLocations,
-  resolveUserLocation,
-} from "@/lib/api-clients/geocoding";
+import { searchLocations } from "@/lib/api-clients/geocoding";
 
 const POPULAR_CITIES = [
   "Delhi",
@@ -51,9 +47,9 @@ const POPULAR_CITIES = [
   "Pune",
 ];
 
-interface Location {
+interface Ward {
   id: string | null;
-  name: string; // This will now be ward name instead of city
+  name: string; // Ward name
   ward?: string; // Store ward separately for reference
   city: string;
   state: string;
@@ -92,72 +88,50 @@ async function fetchLiveAQI(lat: number, lon: number) {
   }
 }
 
-const fetchDataForLocation = async (
+const fetchDataForWard = async (
   name: string,
   ward?: string,
   city?: string,
   postcode?: string,
-): Promise<Location> => {
+): Promise<Ward> => {
   const supabase = createClient();
 
-  const { data: dbLocation } = await supabase
-    .from("locations")
+  const { data: dbWard } = await supabase
+    .from("wards")
     .select("*")
     .or(`name.ilike.%${name}%,city.ilike.%${name}%`)
     .limit(1)
     .maybeSingle();
 
-  if (dbLocation) {
+  if (dbWard) {
     const { data: latestReading } = await supabase
       .from("aqi_readings")
       .select("*")
-      .eq("location_id", dbLocation.id)
+      .eq("ward_id", dbWard.id)
       .order("recorded_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     const liveAQI = await fetchLiveAQI(
-      dbLocation.latitude,
-      dbLocation.longitude,
+      dbWard.centroid_lat,
+      dbWard.centroid_lon,
     );
 
     // Ensure city is not the same as ward (which would indicate data issue)
-    let resultCity = city || dbLocation.city;
-    if (resultCity === ward && !city && dbLocation.state) {
-      // If detected city equals ward and no explicit city was passed,
-      // try to find the parent city from database
-      const { data: parentCity } = await supabase
-        .from("locations")
-        .select("city")
-        .eq("city", dbLocation.state)
-        .limit(1)
-        .maybeSingle();
-      resultCity = parentCity?.city || dbLocation.state || resultCity;
-    }
+    let resultCity = city || dbWard.city || "City";
 
     return {
-      id: dbLocation.id,
-      name: ward || dbLocation.ward || dbLocation.name, // Use passed ward param first, then db ward, then location name
-      ward: ward || dbLocation.ward,
+      id: dbWard.id,
+      name: ward || dbWard.name,
+      ward: ward || dbWard.name,
       city: resultCity,
-      state: dbLocation.state || "State",
-      country: dbLocation.country || "India",
-      postcode: postcode || dbLocation.postcode,
-      lat: dbLocation.latitude,
-      lng: dbLocation.longitude,
+      state: dbWard.state || "State",
+      country: "India",
+      postcode: postcode,
+      lat: dbWard.centroid_lat,
+      lng: dbWard.centroid_lon,
       aqi: liveAQI?.aqi ?? latestReading?.aqi_value ?? 150,
-      pollutants:
-        liveAQI?.pollutants ??
-        (latestReading
-          ? {
-              pm25: latestReading.pm25 ?? undefined,
-              pm10: latestReading.pm10 ?? undefined,
-              no2: latestReading.no2 ?? undefined,
-              so2: latestReading.so2 ?? undefined,
-              co: latestReading.co ?? undefined,
-              o3: latestReading.o3 ?? undefined,
-            }
-          : undefined),
+      pollutants: liveAQI?.pollutants ?? undefined,
       lastUpdated: liveAQI?.timestamp
         ? new Date(liveAQI.timestamp).toLocaleTimeString()
         : latestReading
@@ -169,18 +143,18 @@ const fetchDataForLocation = async (
   try {
     const suggestions = await searchLocations(name);
     if (suggestions.length > 0) {
-      const loc = suggestions[0];
-      const liveAQI = await fetchLiveAQI(loc.lat, loc.lon);
+      const wardData = suggestions[0];
+      const liveAQI = await fetchLiveAQI(wardData.lat, wardData.lon);
       return {
         id: null,
-        name: ward || loc.ward || loc.display_name.split(",")[0], // Use passed ward first, then from search
-        ward: ward || loc.ward,
-        city: city || loc.city || name,
-        state: loc.state || "India",
+        name: ward || wardData.ward || wardData.display_name.split(",")[0], // Use passed ward first, then from search
+        ward: ward || wardData.ward,
+        city: city || wardData.city || name,
+        state: wardData.state || "India",
         country: "India",
-        postcode: postcode || loc.postcode,
-        lat: loc.lat,
-        lng: loc.lon,
+        postcode: postcode || wardData.postcode,
+        lat: wardData.lat,
+        lng: wardData.lon,
         aqi: liveAQI?.aqi ?? 120,
         pollutants: liveAQI?.pollutants,
         lastUpdated: liveAQI?.timestamp
@@ -359,10 +333,8 @@ const fadeInUp = {
 };
 
 export default function SearchPage() {
-  const [selectedLocation, setSelectedLocation] = useState<Location | null>(
-    null,
-  );
-  const [compareLocation, setCompareLocation] = useState<Location | null>(null);
+  const [selectedWard, setSelectedWard] = useState<Ward | null>(null);
+  const [compareWard, setCompareWard] = useState<Ward | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -371,33 +343,33 @@ export default function SearchPage() {
   const [nearbyStations, setNearbyStations] = useState<any[]>([]);
   const [trendData, setTrendData] = useState<any[]>([]);
 
-  const { isConnected } = useAQISubscription(selectedLocation?.id ?? undefined);
+  const { isConnected } = useAQISubscription(selectedWard?.id ?? undefined);
   const readings = useAQIStore((state) => state.readings);
 
-  const liveSelectedLocation = useMemo(() => {
-    if (!selectedLocation?.id) return selectedLocation;
-    const liveReading = readings[selectedLocation.id];
-    if (!liveReading) return selectedLocation;
+  const liveSelectedWard = useMemo(() => {
+    if (!selectedWard?.id) return selectedWard;
+    const liveReading = readings[selectedWard.id];
+    if (!liveReading) return selectedWard;
 
     return {
-      ...selectedLocation,
+      ...selectedWard,
       aqi: liveReading.aqi,
       pollutants: liveReading.pollutants,
       lastUpdated: new Date(liveReading.timestamp).toLocaleTimeString(),
     };
-  }, [selectedLocation, readings]);
+  }, [selectedWard, readings]);
 
   useEffect(() => {
-    if (!selectedLocation) return;
+    if (!selectedWard) return;
 
     const fetchExtraData = async () => {
       const supabase = createClient();
 
-      if (selectedLocation.id) {
+      if (selectedWard.id) {
         const { data: history } = await supabase
           .from("aqi_readings")
           .select("aqi_value, recorded_at")
-          .eq("location_id", selectedLocation.id)
+          .eq("ward_id", selectedWard.id)
           .order("recorded_at", { ascending: false })
           .limit(24);
 
@@ -414,7 +386,7 @@ export default function SearchPage() {
               time: `${(new Date().getHours() - (23 - i) + 24) % 24}:00`,
               aqi: Math.max(
                 0,
-                selectedLocation.aqi + Math.floor(Math.random() * 40 - 20),
+                selectedWard.aqi + Math.floor(Math.random() * 40 - 20),
               ),
             })),
           );
@@ -425,32 +397,32 @@ export default function SearchPage() {
             time: `${(new Date().getHours() - (23 - i) + 24) % 24}:00`,
             aqi: Math.max(
               0,
-              selectedLocation.aqi + Math.floor(Math.random() * 40 - 20),
+              selectedWard.aqi + Math.floor(Math.random() * 40 - 20),
             ),
           })),
         );
       }
 
-      const { data: otherLocs } = await supabase
-        .from("locations")
-        .select("id, name, latitude, longitude")
-        .eq("city", selectedLocation.city)
-        .neq("name", selectedLocation.name)
+      const { data: otherWards } = await supabase
+        .from("wards")
+        .select("id, name, centroid_lat, centroid_lon")
+        .eq("city", selectedWard.city)
+        .neq("name", selectedWard.name)
         .limit(5);
 
-      if (otherLocs && otherLocs.length > 0) {
-        const stationIds = otherLocs.map((l) => l.id);
+      if (otherWards && otherWards.length > 0) {
+        const stationIds = otherWards.map((w: any) => w.id);
         const { data: latestReadings } = await supabase
           .from("aqi_readings")
-          .select("location_id, aqi_value")
-          .in("location_id", stationIds)
+          .select("ward_id, aqi_value")
+          .in("ward_id", stationIds)
           .order("recorded_at", { ascending: false });
 
-        const formatted = otherLocs.map((l) => {
-          const reading = latestReadings?.find((r) => r.location_id === l.id);
+        const formatted = otherWards.map((w: any) => {
+          const reading = latestReadings?.find((r: any) => r.ward_id === w.id);
           return {
-            id: l.id,
-            name: l.name,
+            id: w.id,
+            name: w.name,
             distance: 2.5 + Math.random() * 5,
             aqi: reading?.aqi_value || 100,
           };
@@ -462,20 +434,20 @@ export default function SearchPage() {
             id: "f1",
             name: "City Center",
             distance: 1.2,
-            aqi: selectedLocation.aqi + 5,
+            aqi: selectedWard.aqi + 5,
           },
           {
             id: "f2",
             name: "Industrial Zone",
             distance: 4.8,
-            aqi: selectedLocation.aqi + 25,
+            aqi: selectedWard.aqi + 25,
           },
         ]);
       }
     };
 
     fetchExtraData();
-  }, [selectedLocation]);
+  }, [selectedWard]);
 
   useEffect(() => {
     const saved = localStorage.getItem("recent_searches");
@@ -488,61 +460,15 @@ export default function SearchPage() {
     }
   }, []);
 
-  // Auto-fetch current location on page load
-  useEffect(() => {
-    const autoFetchLocation = async () => {
-      try {
-        const { locationInfo } = await resolveUserLocation();
-
-        // Use the location data to fetch additional info
-        const locationData = await fetchDataForLocation(
-          locationInfo.ward || locationInfo.city || locationInfo.display_name,
-          locationInfo.ward,
-          locationInfo.city,
-          locationInfo.postcode,
-        );
-
-        setSelectedLocation(locationData);
-
-        if (locationData.id && locationData.pollutants) {
-          useAQIStore.getState().setReading(locationData.id, {
-            aqi: locationData.aqi,
-            pollutants: locationData.pollutants as any,
-            source: "auto",
-            timestamp: new Date().toISOString(),
-          });
-        }
-
-        // Fetch fire data
-        try {
-          const fireResp = await fetch(
-            `/api/firms?lat=${locationData.lat}&lon=${locationData.lng}&radius=300&days=2`,
-          );
-          if (fireResp.ok) {
-            const fireData = await fireResp.json();
-            setFireRisk(fireData);
-          }
-        } catch (e) {
-          console.error("Failed to fetch fire data on init", e);
-        }
-      } catch (error) {
-        console.error("Failed to auto-fetch current location", error);
-        // Silently fail - user can still search manually
-      }
-    };
-
-    autoFetchLocation();
-  }, []);
-
   const handleSearch = React.useCallback(
-    async (name: string, ward?: string, city?: string, postcode?: string) => {
+    async (name: string) => {
       setIsLoading(true);
-      const data = await fetchDataForLocation(name, ward, city, postcode);
+      const data = await fetchDataForWard(name);
 
       if (isComparing) {
-        setCompareLocation(data);
+        setCompareWard(data);
       } else {
-        setSelectedLocation(data);
+        setSelectedWard(data);
 
         if (data.id && data.pollutants) {
           useAQIStore.getState().setReading(data.id, {
@@ -578,9 +504,9 @@ export default function SearchPage() {
   );
 
   const handleRefresh = async () => {
-    if (!selectedLocation) return;
+    if (!selectedWard) return;
     const now = Date.now();
-    const storageKey = `last_refresh_${selectedLocation.name.toLowerCase().replace(/\s+/g, "_")}`;
+    const storageKey = `last_refresh_${selectedWard.name.toLowerCase().replace(/\s+/g, "_")}`;
     const lastRefresh = localStorage.getItem(storageKey);
     const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -589,15 +515,15 @@ export default function SearchPage() {
         (REFRESH_INTERVAL_MS - (now - parseInt(lastRefresh))) / 60000,
       );
       alert(
-        `Rate limit reached. Please wait ${remaining} minute(s) before refreshing ${selectedLocation.name} again.`,
+        `Rate limit reached. Please wait ${remaining} minute(s) before refreshing ${selectedWard.name} again.`,
       );
       return;
     }
 
     setIsRefreshing(true);
     localStorage.setItem(storageKey, now.toString());
-    const data = await fetchDataForLocation(selectedLocation.name);
-    setSelectedLocation(data);
+    const data = await fetchDataForWard(selectedWard.name);
+    setSelectedWard(data);
 
     if (data.id && data.pollutants) {
       useAQIStore.getState().setReading(data.id, {
@@ -622,7 +548,7 @@ export default function SearchPage() {
   };
 
   const pollutantComparison = useMemo(() => {
-    const p = liveSelectedLocation?.pollutants;
+    const p = liveSelectedWard?.pollutants;
 
     return [
       {
@@ -642,14 +568,14 @@ export default function SearchPage() {
       { name: "CO", unit: "ppm", loc1Value: p?.co || 2.1, loc2Value: 1.8 },
       { name: "O3", unit: "ppb", loc1Value: p?.o3 || 34.0, loc2Value: 42.5 },
     ];
-  }, [liveSelectedLocation]);
+  }, [liveSelectedWard]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 relative overflow-hidden">
+    <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-zinc-950 relative overflow-hidden">
       <AnimatedBackground />
 
       <div className="absolute inset-0">
-        <div className="absolute top-0 left-0 right-0 h-[30vh] bg-gradient-to-b from-teal-900/20 via-transparent to-transparent" />
+        <div className="absolute top-0 left-0 right-0 h-[30vh] bg-linear-to-b from-teal-900/20 via-transparent to-transparent" />
         <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-teal-500/10 rounded-full blur-[96px]" />
         <div className="absolute bottom-1/4 right-1/4 w-56 h-56 bg-cyan-400/10 rounded-full blur-[80px]" />
       </div>
@@ -687,13 +613,9 @@ export default function SearchPage() {
 
           <div className="w-full max-w-2xl space-y-6">
             <div className="relative group">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500" />
+              <div className="absolute -inset-0.5 bg-linear-to-r from-teal-500 to-cyan-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500" />
               <div className="relative">
-                <LocationSearch
-                  onSelect={(l) =>
-                    handleSearch(l.name, l.ward, l.city, l.postcode)
-                  }
-                />
+                <LocationSearch onSelect={(l) => handleSearch(l.name)} />
               </div>
             </div>
 
@@ -702,56 +624,18 @@ export default function SearchPage() {
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="flex flex-col gap-3"
+                  className="flex flex-wrap items-center justify-center gap-3"
                 >
-                  <div className="flex items-center justify-between px-1">
-                    <div className="flex items-center gap-2">
-                      <History className="h-4 w-4 text-zinc-500" />
-                      <span className="text-sm font-medium text-zinc-400">
-                        Recent Searches
-                      </span>
-                    </div>
+                  <History className="h-4 w-4 text-zinc-500" />
+                  {recentSearches.map((city) => (
                     <button
-                      onClick={() => {
-                        setRecentSearches([]);
-                        localStorage.removeItem("recent_searches");
-                      }}
-                      className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors font-medium"
+                      key={city}
+                      onClick={() => handleSearch(city)}
+                      className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-zinc-300 hover:bg-teal-500/20 hover:border-teal-500/30 hover:text-teal-300 transition-all"
                     >
-                      Clear all
+                      {city}
                     </button>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {recentSearches.map((city) => (
-                      <div
-                        key={city}
-                        className="group relative inline-flex items-center"
-                      >
-                        <button
-                          onClick={() => handleSearch(city)}
-                          className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-zinc-300 hover:bg-teal-500/20 hover:border-teal-500/30 hover:text-teal-300 transition-all"
-                        >
-                          {city}
-                        </button>
-                        <button
-                          onClick={() => {
-                            const updated = recentSearches.filter(
-                              (s) => s !== city,
-                            );
-                            setRecentSearches(updated);
-                            localStorage.setItem(
-                              "recent_searches",
-                              JSON.stringify(updated),
-                            );
-                          }}
-                          className="absolute -right-1 -top-1 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500/80 hover:bg-red-600 text-white rounded-full p-0.5"
-                          aria-label="Remove search"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                  ))}
                 </motion.div>
               )}
 
@@ -759,28 +643,18 @@ export default function SearchPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.2 }}
-                className="flex flex-col gap-3"
+                className="flex flex-wrap items-center justify-center gap-3"
               >
-                <div className="flex items-center gap-2 px-1">
-                  <TrendingUp className="h-4 w-4 text-zinc-500" />
-                  <span className="text-sm font-medium text-zinc-400">
-                    Popular Cities
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {POPULAR_CITIES.map((city) => (
-                    <button
-                      key={city}
-                      onClick={() => handleSearch(city)}
-                      className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-zinc-400 hover:bg-teal-500/10 hover:border-teal-500/30 hover:text-teal-300 transition-all group relative"
-                    >
-                      <span>{city}</span>
-                      <span className="absolute -top-2 -right-1 inline-flex items-center justify-center h-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500/80 text-white opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                        Live
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                <TrendingUp className="h-4 w-4 text-zinc-500" />
+                {POPULAR_CITIES.map((city) => (
+                  <button
+                    key={city}
+                    onClick={() => handleSearch(city)}
+                    className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-zinc-400 hover:bg-teal-500/10 hover:border-teal-500/30 hover:text-teal-300 transition-all"
+                  >
+                    {city}
+                  </button>
+                ))}
               </motion.div>
             </div>
           </div>
@@ -805,7 +679,7 @@ export default function SearchPage() {
           )}
         </AnimatePresence>
 
-        {liveSelectedLocation && !isLoading && (
+        {liveSelectedWard && !isLoading && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -824,7 +698,7 @@ export default function SearchPage() {
             >
               <div className="flex items-center gap-5">
                 <div className="relative">
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/30 text-2xl">
+                  <div className="p-4 rounded-2xl bg-linear-to-br from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/30 text-2xl">
                     <MapPin className="w-6 h-6" />
                   </div>
                   {isConnected && (
@@ -836,28 +710,21 @@ export default function SearchPage() {
                 </div>
                 <div className="text-left">
                   <h2 className="text-3xl font-black text-white flex items-center gap-3">
-                    {liveSelectedLocation.ward || liveSelectedLocation.name}
+                    {liveSelectedWard.name}
                     {isConnected && (
                       <Badge className="bg-green-500/20 text-green-400 border-green-500/30 animate-pulse py-0.5 px-2 text-[10px] font-bold uppercase tracking-wider">
                         Live
                       </Badge>
                     )}
                   </h2>
-                  <div className="flex flex-col gap-1 text-zinc-400 mt-2">
-                    <span className="text-sm">
-                      {liveSelectedLocation.name}
-                      {liveSelectedLocation.city &&
-                      liveSelectedLocation.name !== liveSelectedLocation.city
-                        ? `, ${liveSelectedLocation.city}`
-                        : ""}
-                      , {liveSelectedLocation.state}
-                      {liveSelectedLocation.postcode
-                        ? `, ${liveSelectedLocation.postcode}`
-                        : ""}
-                      , {liveSelectedLocation.country}
+                  <div className="flex items-center gap-2 text-zinc-400 mt-1">
+                    <span>
+                      {liveSelectedWard.state}, {liveSelectedWard.country}
                     </span>
-                    <span className="text-xs text-zinc-500">
-                      {liveSelectedLocation.state}
+                    <span className="text-zinc-600">•</span>
+                    <span className="text-xs font-mono bg-white/5 px-2 py-0.5 rounded">
+                      {liveSelectedWard.lat.toFixed(4)},{" "}
+                      {liveSelectedWard.lng.toFixed(4)}
                     </span>
                   </div>
                 </div>
@@ -873,7 +740,7 @@ export default function SearchPage() {
                   </Badge>
                 </div>
                 <div className="flex items-center gap-3 text-sm text-zinc-500 font-medium">
-                  <span>Updated: {liveSelectedLocation.lastUpdated}</span>
+                  <span>Updated: {liveSelectedWard.lastUpdated}</span>
                   <Button
                     disabled={isRefreshing}
                     onClick={handleRefresh}
@@ -900,7 +767,7 @@ export default function SearchPage() {
                     transition={{ delay: 0.2 }}
                     className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white/5 backdrop-blur-xl border border-white/10 p-10 rounded-3xl relative overflow-hidden"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 to-cyan-500/5" />
+                    <div className="absolute inset-0 bg-linear-to-br from-teal-500/5 to-cyan-500/5" />
                     {isConnected && (
                       <div className="absolute top-4 right-4">
                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-[10px] font-bold text-green-400">
@@ -910,25 +777,25 @@ export default function SearchPage() {
                       </div>
                     )}
                     <div className="flex flex-col items-center justify-center relative z-10">
-                      <AQIGauge aqi={liveSelectedLocation.aqi} />
+                      <AQIGauge aqi={liveSelectedWard.aqi} />
                     </div>
                     <div className="flex flex-col justify-center space-y-5 relative z-10">
                       <div className="space-y-2 text-left">
                         <p className="text-sm font-bold uppercase tracking-widest text-zinc-500">
                           Current Quality
                         </p>
-                        <p
-                          className="text-4xl font-black"
-                          style={{
-                            color: getAQIDisplay(liveSelectedLocation.aqi)
-                              .color,
-                          }}
-                        >
-                          {getAQIDisplay(liveSelectedLocation.aqi).category}
+                        <p className="text-4xl font-black">
+                          <span
+                            style={{
+                              color: getAQIDisplay(liveSelectedWard.aqi).color,
+                            }}
+                          >
+                            {getAQIDisplay(liveSelectedWard.aqi).category}
+                          </span>
                         </p>
                       </div>
                       <p className="text-zinc-400 leading-relaxed text-left">
-                        {getAQIDisplay(liveSelectedLocation.aqi).description}
+                        {getAQIDisplay(liveSelectedWard.aqi).description}
                       </p>
                       <div className="pt-4 border-t border-white/10 text-left">
                         <p className="text-xs text-zinc-500 flex items-center gap-2">
@@ -949,42 +816,42 @@ export default function SearchPage() {
                     {[
                       {
                         name: "PM2.5",
-                        value: liveSelectedLocation.pollutants?.pm25 || 45.2,
+                        value: liveSelectedWard.pollutants?.pm25 || 45.2,
                         unit: "µg/m³",
                         description:
                           "Fine particulate matter smaller than 2.5 microns, penetrates deep into lungs.",
                       },
                       {
                         name: "PM10",
-                        value: liveSelectedLocation.pollutants?.pm10 || 78.5,
+                        value: liveSelectedWard.pollutants?.pm10 || 78.5,
                         unit: "µg/m³",
                         description:
                           "Coarse particulate matter, can irritate respiratory system.",
                       },
                       {
                         name: "NO2",
-                        value: liveSelectedLocation.pollutants?.no2 || 23.1,
+                        value: liveSelectedWard.pollutants?.no2 || 23.1,
                         unit: "ppb",
                         description:
                           "Nitrogen dioxide, primarily from vehicle emissions and power plants.",
                       },
                       {
                         name: "SO2",
-                        value: liveSelectedLocation.pollutants?.so2 || 8.4,
+                        value: liveSelectedWard.pollutants?.so2 || 8.4,
                         unit: "ppb",
                         description:
                           "Sulfur dioxide, produced from burning fossil fuels.",
                       },
                       {
                         name: "CO",
-                        value: liveSelectedLocation.pollutants?.co || 1.2,
+                        value: liveSelectedWard.pollutants?.co || 1.2,
                         unit: "ppm",
                         description:
                           "Carbon monoxide, colorless odorless gas from combustion.",
                       },
                       {
                         name: "O3",
-                        value: liveSelectedLocation.pollutants?.o3 || 56.8,
+                        value: liveSelectedWard.pollutants?.o3 || 56.8,
                         unit: "ppb",
                         description:
                           "Ground-level ozone, formed from vehicle emissions and sunlight.",
@@ -994,7 +861,7 @@ export default function SearchPage() {
                     ))}
                   </motion.div>
 
-                  <HealthAdvisory aqi={liveSelectedLocation.aqi} />
+                  <HealthAdvisory aqi={liveSelectedWard.aqi} />
 
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
@@ -1012,7 +879,7 @@ export default function SearchPage() {
                   >
                     <Button
                       onClick={() => setIsComparing(true)}
-                      className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white rounded-2xl h-14 px-8 font-bold gap-3 shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 transition-all hover:-translate-y-0.5"
+                      className="bg-linear-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white rounded-2xl h-14 px-8 font-bold gap-3 shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 transition-all hover:-translate-y-0.5"
                     >
                       <PlusCircle className="h-5 w-5" /> Compare with another
                       location
@@ -1101,8 +968,8 @@ export default function SearchPage() {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.5 }}
                   >
-                    <Card className="p-6 bg-gradient-to-br from-teal-600 to-cyan-600 border-none overflow-hidden relative group">
-                      <div className="absolute inset-0 bg-gradient-to-br from-teal-700/50 to-cyan-700/50" />
+                    <Card className="p-6 bg-linear-to-br from-teal-600 to-cyan-600 border-none overflow-hidden relative group">
+                      <div className="absolute inset-0 bg-linear-to-br from-teal-700/50 to-cyan-700/50" />
                       <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl group-hover:bg-white/20 transition-all duration-500" />
                       <div className="relative z-10 space-y-4">
                         <h3 className="font-black text-xl leading-tight text-white">
@@ -1134,7 +1001,7 @@ export default function SearchPage() {
                   <Button
                     onClick={() => {
                       setIsComparing(false);
-                      setCompareLocation(null);
+                      setCompareWard(null);
                     }}
                     variant="ghost"
                     className="text-zinc-400 hover:text-red-400 font-bold gap-2 hover:bg-red-500/10"
@@ -1143,104 +1010,37 @@ export default function SearchPage() {
                   </Button>
                 </div>
 
-                {!compareLocation ? (
+                {!compareWard ? (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     className="flex flex-col items-center justify-center py-20 bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 gap-6"
                   >
-                    <div className="p-5 rounded-2xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 border border-teal-500/30">
+                    <div className="p-5 rounded-2xl bg-linear-to-br from-teal-500/20 to-cyan-500/20 border border-teal-500/30">
                       <ArrowLeftRight className="h-10 w-10 text-teal-400" />
                     </div>
                     <div className="text-center space-y-2">
                       <p className="text-xl font-bold text-white">
-                        Select a second location
+                        Select a second ward
                       </p>
                       <p className="text-zinc-400 text-sm max-w-xs">
-                        Search for another city or area to compare its air
-                        quality side-by-side with {liveSelectedLocation.name}.
+                        Search for another ward or area to compare its air
+                        quality side-by-side with {liveSelectedWard.name}.
                       </p>
                     </div>
                     <div className="w-full max-w-md">
-                      <LocationSearch
-                        onSelect={(l) =>
-                          handleSearch(l.name, l.ward, l.city, l.postcode)
-                        }
-                      />
-                    </div>
-                    <div className="w-full max-w-md space-y-4 mt-6">
-                      {recentSearches.length > 0 && (
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="flex flex-col gap-3"
-                        >
-                          <div className="flex items-center justify-between px-1">
-                            <div className="flex items-center gap-2">
-                              <History className="h-4 w-4 text-zinc-500" />
-                              <span className="text-sm font-medium text-zinc-400">
-                                Recent Searches
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => {
-                                setRecentSearches([]);
-                                localStorage.removeItem("recent_searches");
-                              }}
-                              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors font-medium"
-                            >
-                              Clear all
-                            </button>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            {recentSearches.map((city) => (
-                              <button
-                                key={city}
-                                onClick={() => handleSearch(city)}
-                                className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-zinc-300 hover:bg-teal-500/20 hover:border-teal-500/30 hover:text-teal-300 transition-all"
-                              >
-                                {city}
-                              </button>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )}
-
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.1 }}
-                        className="flex flex-col gap-3"
-                      >
-                        <div className="flex items-center gap-2 px-1">
-                          <TrendingUp className="h-4 w-4 text-zinc-500" />
-                          <span className="text-sm font-medium text-zinc-400">
-                            Popular Cities
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {POPULAR_CITIES.map((city) => (
-                            <button
-                              key={city}
-                              onClick={() => handleSearch(city)}
-                              className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-zinc-400 hover:bg-teal-500/10 hover:border-teal-500/30 hover:text-teal-300 transition-all"
-                            >
-                              {city}
-                            </button>
-                          ))}
-                        </div>
-                      </motion.div>
+                      <LocationSearch onSelect={(l) => handleSearch(l.name)} />
                     </div>
                   </motion.div>
                 ) : (
                   <ComparisonView
                     loc1={{
-                      name: liveSelectedLocation.name,
-                      aqi: liveSelectedLocation.aqi,
+                      name: liveSelectedWard.name,
+                      aqi: liveSelectedWard.aqi,
                     }}
                     loc2={{
-                      name: compareLocation.name,
-                      aqi: compareLocation.aqi,
+                      name: compareWard?.name ?? "",
+                      aqi: compareWard?.aqi ?? 0,
                     }}
                     pollutants={pollutantComparison}
                   />

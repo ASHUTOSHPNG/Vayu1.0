@@ -20,7 +20,7 @@ export function useAQISubscription(locationId?: string) {
     const channelRef = useRef<RealtimeChannel | null>(null);
     const retryCountRef = useRef(0);
     const isGlobal = !locationId;
-    const MAX_RETRIES = 10; // Increased retries
+    const MAX_RETRIES =         0;
 
     const subscribe = useCallback(() => {
         // Guard against double subscription for THIS hook instance
@@ -45,7 +45,7 @@ export function useAQISubscription(locationId?: string) {
                     event: 'INSERT',
                     schema: 'public',
                     table: 'aqi_readings',
-                    filter: locationId ? `location_id=eq.${locationId}` : undefined,
+                    ...(locationId ? { filter: `ward_id=eq.${locationId}` } : {}),
                 },
                 (payload) => {
                     const newReading = payload.new as any;
@@ -53,7 +53,7 @@ export function useAQISubscription(locationId?: string) {
 
                     const formattedReading: AQReading = {
                         aqi: newReading.aqi_value,
-                        pollutants: {
+                            pollutants: {
                             pm25: newReading.pm25,
                             pm10: newReading.pm10,
                             no2: newReading.no2,
@@ -66,7 +66,7 @@ export function useAQISubscription(locationId?: string) {
                     };
 
                     setLatestReading(formattedReading);
-                    const locId = newReading.location_id || locationId;
+                    const locId = newReading.ward_id|| locationId;
                     if (locId) {
                         setStoreReading(locId, formattedReading);
                     }

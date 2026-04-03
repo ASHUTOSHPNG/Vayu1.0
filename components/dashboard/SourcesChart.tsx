@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -24,7 +23,6 @@ export function SourcesChart() {
     const supabase = createClient();
     const { adminContext, isCentralAdmin, cityName } = useAdminContext();
     const { selectedCityId } = useAdminStore();
-
     const [mounted, setMounted] = useState(false);
     useEffect(() => { setMounted(true); }, []);
 
@@ -35,7 +33,7 @@ export function SourcesChart() {
         queryFn: async () => {
             if (!adminContext) return [];
 
-            let query = supabase
+            let query = (supabase as any)
                 .from('pollution_sources')
                 .select(`
                     id,
@@ -45,13 +43,10 @@ export function SourcesChart() {
                 `);
 
             query = applyCityFilter(query, adminContext, selectedCityId);
-
             const { data, error } = await query;
             if (error) throw error;
 
             const readings = (data as any[]) || [];
-
-            // Group and aggregate
             const counts: Record<string, number> = {};
             readings.forEach(d => {
                 const type = d.source_type.toUpperCase().replace(' ', '_');
@@ -81,7 +76,6 @@ export function SourcesChart() {
                     {activeCity ? `${activeCity} Sources (24h)` : 'National Sources (24h)'}
                 </CardTitle>
             </CardHeader>
-
             <CardContent className="p-4 flex-1 flex flex-col">
                 {(!mounted || isLoading) ? (
                     <div className="flex-1 flex justify-center items-center">

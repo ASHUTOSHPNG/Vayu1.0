@@ -60,28 +60,19 @@ export async function subscribeUser() {
 
     const supabase = createClient();
 
-    // Get current user from session
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    // TODO: Implement push subscription storage when push_subscriptions table is created
+    // const { error } = await supabase.from("push_subscriptions").upsert({
+    //   user_id: user.id,
+    //   endpoint: subscription.endpoint,
+    //   p256dh: p256dhString,
+    //   auth: authString,
+    //   threshold_aqi: 100,
+    // });
 
-    if (!user) {
-      console.error("User not authenticated");
-      return subscription;
-    }
-
-    const { error } = await supabase.from("push_subscriptions").upsert({
-      user_id: user.id,
-      endpoint: subscription.endpoint,
-      p256dh: p256dhString,
-      auth: authString,
-      threshold_aqi: 100, // Default
-    });
-
-    if (error) {
-      console.error("Error saving subscription to database:", error);
-      return subscription; // Still return subscription if it was successful locally
-    }
+    // if (error) {
+    //   console.error("Error saving subscription to database:", error);
+    //   return subscription;
+    // }
 
     console.log("User subscribed to push notifications successfully");
     return subscription;
